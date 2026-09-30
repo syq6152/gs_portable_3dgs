@@ -1,0 +1,31 @@
+diff --git a/include/assimp/IOStreamBuffer.h b/include/assimp/IOStreamBuffer.h
+--- a/include/assimp/IOStreamBuffer.h
++++ b/include/assimp/IOStreamBuffer.h
+@@ -293,10 +293,8 @@ AI_FORCE_INLINE bool IOStreamBuffer<T>::getNextLine(std::vector<T> &buffer) {
+-    if (IsLineEnd(m_cache[m_cachePos])) {
+-        // skip line end
+-        do {
+-            ++m_cachePos;
+-            if (isEndOfCache(m_cachePos, m_cacheSize) && !readNextBlock()) {
+-                return false;
+-            }
++    // A CRLF pair can straddle cache blocks. Consume only line endings;
++    // scanning to the next LF would discard the following vertex/face row.
++    while (IsLineEnd(m_cache[m_cachePos])) {
++        ++m_cachePos;
++        if (isEndOfCache(m_cachePos, m_cacheSize) && !readNextBlock()) {
++            return false;
+         }
+-        while (m_cache[m_cachePos] != '\n');
+     }
+@@ -313,7 +311,9 @@ AI_FORCE_INLINE bool IOStreamBuffer<T>::getNextLine(std::vector<T> &buffer) {
+ 
+         if (m_cachePos >= m_cacheSize) {
+             if (!readNextBlock()) {
+-                return false;
++                // EOF after data still completes the last logical line.
++                buffer[i] = '\n';
++                return true;
+             }
+         }
+     }

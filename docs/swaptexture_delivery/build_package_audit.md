@@ -129,3 +129,15 @@ C:\Users\shiboke\AppData\Local\anaconda3\python.exe scripts\check_portable_start
 ```
 
 这些检查分别验证文件清单和程序启动；不替代完整训练、图像质量比较或其他机器上的运行验证。脚本的成功输出才是本次执行的证据，本文不记录预先通过的验收结论。
+
+## 6. Assimp PLY 读取回归
+
+项目通过 [.github/overlays/assimp](../../.github/overlays/assimp/README.md) 保留锁定基线的 Assimp 6.0.4 构建配置，并修复 ASCII PLY 的 CRLF 跨读取块边界时丢失顶点或面记录的问题。原始网格不需要转换换行符；补丁需要重新构建依赖并打包后才会生效。
+
+对新包执行实际 DLL 导入回归，覆盖顶点/面记录跨块、LF 对照、末尾无换行、长行和二进制载荷：
+
+```bat
+C:\Users\shiboke\AppData\Local\anaconda3\python.exe scripts\tests\test_assimp_ply_import.py --assimp-dll SwapTexture\assimp-vc143-mt.dll --postprocess-flags 0x80804b
+```
+
+独立的 `scripts/tests/assimp_stream_regression.cpp` 提供 448 个小缓冲读行用例，可使用 VS2022 对选定 Assimp 头文件与库编译运行。它验证流读取边界；上面的 Python 测试验证真正打包的 DLL。
