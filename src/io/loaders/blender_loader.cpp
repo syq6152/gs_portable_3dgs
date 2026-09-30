@@ -1,0 +1,277 @@
+/* SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+#include "io/loaders/blender_loader.hpp"
+#include "core/camera.hpp"
+#include "core/image_io.hpp"
+#include "core/logger.hpp"
+#include "core/path_utils.hpp"
+#include "core/point_cloud.hpp"
+#include "formats/transforms.hpp"
+#include "io/error.hpp"
+#include "io/filesystem_utils.hpp"
+#include "io/loaders/loader_utils.hpp"
+#include <chrono>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <nlohmann/json.hpp>
+
+namespace lfs::io {
+
+    // Import types from lfs::core for convenience
+    using lfs::core::DataType;
+    using lfs::core::Device;
+    using lfs::core::PointCloud;
+    using lfs::core::Tensor;
+
+    Result<LoadResult> BlenderLoader::load(
+        const std::filesystem::path& path,
+        const LoadOptions& options) {
+
+        LOG_TIMER("Blender/NeRF Loading");
+        auto start_time = std::chrono::high_resolution_clock::now();
+
+        // Validate path exists
+        if (!std::filesystem::exists(path)) {
+            return make_error(ErrorCode::PATH_NOT_FOUND,
+                              "Blender/NeRF dataset path does not exist", path);
+        }
+
+        // Report initial progress
+        if (options.progress) {
+            options.progress(0.0f, "Loading Blender/NeRF dataset...");
+        }
+
+        // Determine transforms file path
+        std::filesystem::path transforms_file;
+
+        if (std::filesystem::is_directory(path)) {
+            // Look for transforms files in directory
+            if (std::filesystem::exists(path / "transforms_train.json")) {
+                transforms_file = path / "transforms_train.json";
+                LOG_DEBUG("Found transforms_train.json");
+            } else if (std::filesystem::exists(path / "transforms.json")) {
+                transforms_file = path / "transforms.json";
+                LOG_DEBUG("Found transforms.json");
+            } else {
+                return make_error(ErrorCode::MISSING_REQUIRED_FILES,
+                                  "No transforms file found (expected 'transforms.json' or 'transforms_train.json')", path);
+            }
+        } else if (path.extension() == ".json") {
+            // Direct path to transforms file
+            transforms_file = path;
+            LOG_DEBUG("Using direct transforms file: {}", lfs::core::path_to_utf8(transforms_file));
+        } else {
+            return make_error(ErrorCode::UNSUPPORTED_FORMAT,
+                              "Path must be a directory or a JSON file", path);
+        }
+
+        // Validation only mode
+        if (options.validate_only) {
+            LOG_DEBUG("Validation only mode for Blender/NeRF: {}", lfs::core::path_to_utf8(transforms_file));
+            // Check if the transforms file is valid JSON
+            std::ifstream file;
+            if (!lfs::core::open_file_for_read(transforms_file, file)) {
+                return make_error(ErrorCode::PERMISSION_DENIED,
+                                  "Cannot open transforms file for reading", transforms_file);
+            }
+
+            // Try to parse as JSON (basic validation)
+            try {
+                nlohmann::json j;
+                file >> j;
+
+                if (!j.contains("frames") || !j["frames"].is_array()) {
+                    return make_error(ErrorCode::INVALID_DATASET,
+                                      "Invalid transforms file: missing 'frames' array", transforms_file);
+                }
+            } catch (const std::exception& e) {
+                return make_error(ErrorCode::MALFORMED_JSON,
+                                  std::format("Invalid JSON: {}", e.what()), transforms_file);
+            }
+
+            if (options.progress) {
+                options.progress(100.0f, "Blender/NeRF validation complete");
+            }
+
+            LOG_DEBUG("Blender/NeRF validation successful");
+
+            auto end_time = std::chrono::high_resolution_clock::now();
+            return LoadResult{
+                .data = LoadedScene{
+                    .cameras = {},
+                    .point_cloud = nullptr},
+                .scene_center = Tensor::zeros({3}, Device::CPU, DataType::Float32),
+                .loader_used = name(),
+                .load_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time),
+                .warnings = {"Validation mode - point cloud not loaded"}};
+        }
+
+        // Load the dataset
+        if (options.progress) {
+            options.progress(20.0f, "Reading transforms file...");
+        }
+
+        try {
+            LOG_INFO("Loading Blender/NeRF dataset from: {}", lfs::core::path_to_utf8(transforms_file));
+
+            // Read transforms and create cameras
+            auto [camera_infos, scene_center, train_val_split] = read_transforms_cameras_and_images(transforms_file);
+
+            if (options.progress) {
+                options.progress(40.0f, std::format("Creating {} cameras...", camera_infos.size()));
+            }
+
+            LOG_DEBUG("Creating {} camera objects", camera_infos.size());
+
+            // Convert CameraData to Camera objects
+            std::vector<std::shared_ptr<lfs::core::Camera>> cameras;
+            cameras.reserve(camera_infos.size());
+
+            // Get base path for mask lookup
+            std::filesystem::path base_path = transforms_file.parent_path();
+            MaskDirCache mask_cache(base_path);
+
+            for (size_t i = 0; i < camera_infos.size(); ++i) {
+                const auto& info = camera_infos[i];
+
+                try {
+                    std::filesystem::path mask_path = mask_cache.find(info._image_name);
+
+                    // Validate mask dimensions match image dimensions
+                    if (!mask_path.empty()) {
+                        auto [img_w, img_h, img_c] = lfs::core::get_image_info(info._image_path);
+                        auto [mask_w, mask_h, mask_c] = lfs::core::get_image_info(mask_path);
+                        if (img_w != mask_w || img_h != mask_h) {
+                            return make_error(ErrorCode::MASK_SIZE_MISMATCH,
+                                              std::format("Mask '{}' is {}x{} but image '{}' is {}x{}",
+                                                          lfs::core::path_to_utf8(mask_path.filename()), mask_w, mask_h,
+                                                          info._image_name, img_w, img_h),
+                                              mask_path);
+                        }
+                    }
+
+                    auto cam = std::make_shared<lfs::core::Camera>(
+                        info._R,
+                        info._T,
+                        info._focal_x,
+                        info._focal_y,
+                        info._center_x,
+                        info._center_y,
+                        info._radial_distortion,
+                        info._tangential_distortion,
+                        info._camera_model_type,
+                        info._image_name,
+                        info._image_path,
+                        mask_path,
+                        info._width,
+                        info._height,
+                        static_cast<int>(i));
+
+                    cameras.push_back(cam);
+                } catch (const std::exception& e) {
+                    LOG_ERROR("Failed to create camera {}: {}", i, e.what());
+                    throw;
+                }
+            }
+
+            const bool images_have_alpha = detect_camera_alpha(cameras);
+
+            if (options.progress) {
+                options.progress(60.0f, "Loading point cloud...");
+            }
+
+            // Check ply_file_path in transforms.json (nerfstudio format), fallback to pointcloud.ply
+            std::filesystem::path pointcloud_path;
+            if (std::ifstream file; lfs::core::open_file_for_read(transforms_file, file)) {
+                try {
+                    if (const auto json = nlohmann::json::parse(file, nullptr, true, true);
+                        json.contains("ply_file_path")) {
+                        pointcloud_path = base_path / lfs::core::utf8_to_path(json["ply_file_path"].get<std::string>());
+                    }
+                } catch (...) {
+                    // Ignore parse errors - will fallback to default pointcloud.ply
+                }
+            }
+            if (pointcloud_path.empty() || !std::filesystem::exists(pointcloud_path)) {
+                pointcloud_path = base_path / "pointcloud.ply";
+            }
+
+            std::shared_ptr<PointCloud> point_cloud;
+            std::vector<std::string> warnings;
+            if (std::filesystem::exists(pointcloud_path)) {
+                point_cloud = std::make_shared<PointCloud>(load_simple_ply_point_cloud(pointcloud_path));
+                LOG_INFO("Loaded {} points from {}", point_cloud->size(),
+                         lfs::core::path_to_utf8(pointcloud_path.filename()));
+            } else {
+                point_cloud = std::make_shared<PointCloud>(generate_random_point_cloud());
+                LOG_WARN("No PLY found, using {} random points", point_cloud->size());
+                warnings.emplace_back("No point cloud file found, using random initialization");
+            }
+
+            if (options.progress) {
+                options.progress(100.0f, "Blender/NeRF loading complete");
+            }
+
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                end_time - start_time);
+
+            auto scene_center_cpu = scene_center.cpu();
+            const float* sc_ptr = scene_center_cpu.template ptr<float>();
+
+            size_t num_cameras = cameras.size();
+
+            LoadResult result{
+                .data = LoadedScene{
+                    .cameras = std::move(cameras),
+                    .point_cloud = std::move(point_cloud)},
+                .scene_center = scene_center,
+                .images_have_alpha = images_have_alpha,
+                .loader_used = name(),
+                .load_time = load_time,
+                .warnings = std::move(warnings)};
+
+            LOG_INFO("Blender/NeRF dataset loaded successfully in {}ms", load_time.count());
+            LOG_INFO("  - {} cameras", num_cameras);
+            LOG_DEBUG("  - Scene center: [{:.3f}, {:.3f}, {:.3f}]",
+                      sc_ptr[0], sc_ptr[1], sc_ptr[2]);
+
+            return result;
+
+        } catch (const std::exception& e) {
+            return make_error(ErrorCode::CORRUPTED_DATA,
+                              std::format("Failed to load Blender/NeRF dataset: {}", e.what()), path);
+        }
+    }
+
+    bool BlenderLoader::canLoad(const std::filesystem::path& path) const {
+        if (!std::filesystem::exists(path)) {
+            return false;
+        }
+
+        if (std::filesystem::is_directory(path)) {
+            // Check for transforms files in directory
+            return std::filesystem::exists(path / "transforms.json") ||
+                   std::filesystem::exists(path / "transforms_train.json");
+        } else {
+            // Check if it's a JSON file
+            return path.extension() == ".json";
+        }
+    }
+
+    std::string BlenderLoader::name() const {
+        return "Blender/NeRF";
+    }
+
+    std::vector<std::string> BlenderLoader::supportedExtensions() const {
+        return {".json"}; // Can load JSON files directly
+    }
+
+    int BlenderLoader::priority() const {
+        return 5; // Medium priority
+    }
+
+} // namespace lfs::io

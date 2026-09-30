@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "extension": {
+    "name": "AITextureRestore",
+    "packageVersion": "1.1.12",
+    "minAppVersion": "4.2.4"
+  },
+  "capabilities": {
+    "aiTextureRestore": {
+      "enabled": true
+    },
+    "gaussianRender": {
+      "enabled": true
+    }
+  }
+}

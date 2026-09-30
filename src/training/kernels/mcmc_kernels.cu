@@ -1,0 +1,1604 @@
+/* SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+#include "core/tensor.hpp"
+#include "mcmc_kernels.hpp"
+#include <cub/cub.cuh>
+#include <cuda_runtime.h>
+#include <curand_kernel.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <thrust/adjacent_difference.h>
+#include <thrust/device_vector.h>
+#include <thrust/execution_policy.h>
+#include <thrust/scan.h>
+#include <thrust/scatter.h>
+#include <thrust/sequence.h>
+#include <thrust/sort.h>
+
+namespace lfs::training::mcmc {
+
+    // GLM type aliases for CUDA (matching gsplat)
+    using vec2 = glm::vec<2, float>;
+    using vec3 = glm::vec<3, float>;
+    using vec4 = glm::vec<4, float>;
+    using mat3 = glm::mat<3, 3, float>;
+
+    constexpr int RELOCATION_N_MAX = 51;
+    __constant__ float d_relocation_coefficients[RELOCATION_N_MAX * RELOCATION_N_MAX];
+
+    void init_relocation_coefficients(int n_max) {
+        assert(n_max <= RELOCATION_N_MAX);
+        std::vector<float> coeffs(RELOCATION_N_MAX * RELOCATION_N_MAX, 0.0f);
+        for (int n = 0; n < n_max; n++) {
+            float binom = 1.0f;
+            for (int k = 0; k <= n; k++) {
+                const float sign = (k % 2 == 0) ? 1.0f : -1.0f;
+                coeffs[n * RELOCATION_N_MAX + k] = binom * sign * rsqrtf(static_cast<float>(k + 1));
+                if (k < n)
+                    binom *= static_cast<float>(n - k) / static_cast<float>(k + 1);
+            }
+        }
+        cudaMemcpyToSymbol(d_relocation_coefficients, coeffs.data(), RELOCATION_N_MAX * RELOCATION_N_MAX * sizeof(float));
+    }
+
+    // Equation (9) in "3D Gaussian Splatting as Markov Chain Monte Carlo"
+    __global__ void relocation_kernel(
+        const float* __restrict__ opacities,
+        const float* __restrict__ scales,
+        const int32_t* __restrict__ ratios,
+        const float min_opacity,
+        float* __restrict__ new_opacities,
+        float* __restrict__ new_scales,
+        const size_t N) {
+
+        const size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= N)
+            return;
+
+        constexpr float OPACITY_MIN = 1e-6f;
+        constexpr float OPACITY_MAX = 1.0f - 1e-6f;
+        constexpr float DENOM_MIN = 1e-8f;
+        constexpr float COEFF_MAX = 1e6f;
+        constexpr float SCALE_MIN = 1e-10f;
+
+        const int n_idx = ratios[idx];
+        const float opacity = fminf(fmaxf(opacities[idx], OPACITY_MIN), OPACITY_MAX);
+
+        // new_opacity = 1 - (1 - opacity)^(1/n_idx)
+        const float new_opacity = fminf(fmaxf(
+                                            1.0f - powf(1.0f - opacity, 1.0f / static_cast<float>(n_idx)),
+                                            fmaxf(OPACITY_MIN, min_opacity)),
+                                        OPACITY_MAX);
+        new_opacities[idx] = new_opacity;
+
+        // Compute denominator sum using pre-computed coefficients from __constant__ memory
+        float denom_sum = 0.0f;
+        for (int i = 1; i <= n_idx; ++i) {
+            for (int k = 0; k <= (i - 1); ++k) {
+                denom_sum += d_relocation_coefficients[(i - 1) * RELOCATION_N_MAX + k] *
+                             powf(new_opacity, static_cast<float>(k + 1));
+            }
+        }
+
+        // Safe division with sign preservation
+        float safe_denom = fmaxf(fabsf(denom_sum), DENOM_MIN);
+        if (denom_sum < 0.0f)
+            safe_denom = -safe_denom;
+
+        const float coeff = fminf(fmaxf(opacity / safe_denom, -COEFF_MAX), COEFF_MAX);
+
+        for (int i = 0; i < 3; ++i) {
+            new_scales[idx * 3 + i] = fmaxf(fabsf(coeff * scales[idx * 3 + i]), SCALE_MIN);
+        }
+    }
+
+    void launch_relocation_kernel(
+        const float* opacities,
+        const float* scales,
+        const int32_t* ratios,
+        float min_opacity,
+        float* new_opacities,
+        float* new_scales,
+        size_t N,
+        void* stream) {
+
+        if (N == 0) {
+            return;
+        }
+
+        dim3 threads(256);
+        dim3 grid((N + threads.x - 1) / threads.x);
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        relocation_kernel<<<grid, threads, 0, cuda_stream>>>(
+            opacities,
+            scales,
+            ratios,
+            min_opacity,
+            new_opacities,
+            new_scales,
+            N);
+    }
+
+    // Helper: Quaternion to rotation matrix
+    __device__ inline mat3 raw_quat_to_rotmat(const vec4 raw_quat) {
+        float w = raw_quat[0], x = raw_quat[1], y = raw_quat[2], z = raw_quat[3];
+        // normalize
+        float inv_norm = fminf(rsqrt(x * x + y * y + z * z + w * w), 1e+12f); // match torch normalize
+        x *= inv_norm;
+        y *= inv_norm;
+        z *= inv_norm;
+        w *= inv_norm;
+        float x2 = x * x, y2 = y * y, z2 = z * z;
+        float xy = x * y, xz = x * z, yz = y * z;
+        float wx = w * x, wy = w * y, wz = w * z;
+        return mat3(
+            (1.f - 2.f * (y2 + z2)),
+            (2.f * (xy + wz)),
+            (2.f * (xz - wy)), // 1st col
+            (2.f * (xy - wz)),
+            (1.f - 2.f * (x2 + z2)),
+            (2.f * (yz + wx)), // 2nd col
+            (2.f * (xz + wy)),
+            (2.f * (yz - wx)),
+            (1.f - 2.f * (x2 + y2)) // 3rd col
+        );
+    }
+
+    __global__ void add_noise_kernel(
+        const float* raw_opacities,
+        const float* raw_scales,
+        const float* raw_quats,
+        const float* noise,
+        float* means,
+        float current_lr,
+        size_t N) {
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= N)
+            return;
+
+        size_t idx_3d = 3 * idx;
+
+        // Compute S^2 (diagonal matrix from exp(2 * raw_scale))
+        const vec3 raw_scale = glm::make_vec3(raw_scales + idx_3d);
+        mat3 S2 = mat3(__expf(2.f * raw_scale[0]), 0.f, 0.f,
+                       0.f, __expf(2.f * raw_scale[1]), 0.f,
+                       0.f, 0.f, __expf(2.f * raw_scale[2]));
+
+        // Get rotation matrix R from quaternion
+        vec4 raw_quat = glm::make_vec4(raw_quats + 4 * idx);
+        mat3 R = raw_quat_to_rotmat(raw_quat);
+
+        // Compute covariance = R * S^2 * R^T
+        mat3 covariance = R * S2 * glm::transpose(R);
+
+        // Transform noise: transformed_noise = covariance * noise
+        vec3 transformed_noise = covariance * glm::make_vec3(noise + idx_3d);
+
+        // Compute opacity-based scaling factor
+        float opacity = __frcp_rn(1.f + __expf(-raw_opacities[idx]));
+        float op_sigmoid = __frcp_rn(1.f + __expf(100.f * opacity - 0.5f));
+        float noise_factor = current_lr * op_sigmoid;
+
+        // Add scaled noise to means
+        means[idx_3d] += noise_factor * transformed_noise.x;
+        means[idx_3d + 1] += noise_factor * transformed_noise.y;
+        means[idx_3d + 2] += noise_factor * transformed_noise.z;
+    }
+
+    void launch_add_noise_kernel(
+        const float* raw_opacities,
+        const float* raw_scales,
+        const float* raw_quats,
+        const float* noise,
+        float* means,
+        float current_lr,
+        size_t N,
+        void* stream) {
+
+        if (N == 0) {
+            return;
+        }
+
+        dim3 threads(256);
+        dim3 grid((N + threads.x - 1) / threads.x);
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        add_noise_kernel<<<grid, threads, 0, cuda_stream>>>(
+            raw_opacities,
+            raw_scales,
+            raw_quats,
+            noise,
+            means,
+            current_lr,
+            N);
+    }
+
+    // Fused gather kernel - collects all parameters at once
+    __global__ void gather_gaussian_params_kernel(
+        const int64_t* __restrict__ indices,
+        const float* __restrict__ src_means,
+        const float* __restrict__ src_sh0,
+        const float* __restrict__ src_shN,
+        const float* __restrict__ src_scales,
+        const float* __restrict__ src_rotations,
+        const float* __restrict__ src_opacities,
+        float* __restrict__ dst_means,
+        float* __restrict__ dst_sh0,
+        float* __restrict__ dst_shN,
+        float* __restrict__ dst_scales,
+        float* __restrict__ dst_rotations,
+        float* __restrict__ dst_opacities,
+        size_t n_samples,
+        size_t sh_rest,
+        int opacity_dim,
+        size_t N) { // Add N parameter for bounds checking
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= n_samples)
+            return;
+
+        int64_t src_idx = indices[idx];
+
+        // Bounds check - CRITICAL for safety
+        if (src_idx < 0 || src_idx >= static_cast<int64_t>(N)) {
+            // Invalid index - skip this gather (leave output uninitialized or zero it)
+            return;
+        }
+
+        // Gather means [3]
+        for (int i = 0; i < 3; ++i) {
+            dst_means[idx * 3 + i] = src_means[src_idx * 3 + i];
+        }
+
+        // Gather sh0 [N, 1, 3] -> output [n_samples, 1, 3]
+        // Memory layout: each Gaussian has 1*3 = 3 floats
+        for (int i = 0; i < 3; ++i) {
+            dst_sh0[idx * 3 + i] = src_sh0[src_idx * 3 + i];
+        }
+
+        // Gather shN [sh_rest, 3]
+        for (size_t i = 0; i < sh_rest * 3; ++i) {
+            dst_shN[idx * sh_rest * 3 + i] = src_shN[src_idx * sh_rest * 3 + i];
+        }
+
+        // Gather scales [3]
+        for (int i = 0; i < 3; ++i) {
+            dst_scales[idx * 3 + i] = src_scales[src_idx * 3 + i];
+        }
+
+        // Gather rotations [4]
+        for (int i = 0; i < 4; ++i) {
+            dst_rotations[idx * 4 + i] = src_rotations[src_idx * 4 + i];
+        }
+
+        // Gather opacities [1] or []
+        if (opacity_dim == 1) {
+            dst_opacities[idx] = src_opacities[src_idx];
+        } else {
+            dst_opacities[idx] = src_opacities[src_idx];
+        }
+    }
+
+    void launch_gather_gaussian_params(
+        const int64_t* indices,
+        const float* src_means,
+        const float* src_sh0,
+        const float* src_shN,
+        const float* src_scales,
+        const float* src_rotations,
+        const float* src_opacities,
+        float* dst_means,
+        float* dst_sh0,
+        float* dst_shN,
+        float* dst_scales,
+        float* dst_rotations,
+        float* dst_opacities,
+        size_t n_samples,
+        size_t sh_rest,
+        int opacity_dim,
+        size_t N, // Add N parameter
+        void* stream) {
+
+        if (n_samples == 0) {
+            return;
+        }
+
+        dim3 threads(256);
+        dim3 grid((n_samples + threads.x - 1) / threads.x);
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        gather_gaussian_params_kernel<<<grid, threads, 0, cuda_stream>>>(
+            indices,
+            src_means,
+            src_sh0,
+            src_shN,
+            src_scales,
+            src_rotations,
+            src_opacities,
+            dst_means,
+            dst_sh0,
+            dst_shN,
+            dst_scales,
+            dst_rotations,
+            dst_opacities,
+            n_samples,
+            sh_rest,
+            opacity_dim,
+            N);
+    }
+
+    // Fused kernel: Compute raw opacity and scaling values (ZERO intermediate allocations)
+    // Performs: clamp(opacity) -> inverse_sigmoid -> log -> optional unsqueeze
+    //           log(scales)
+    __global__ void compute_raw_values_kernel(
+        const float* __restrict__ opacities, // [n]
+        const float* __restrict__ scales,    // [n, 3]
+        float* __restrict__ opacity_raw,     // [n] or [n, 1]
+        float* __restrict__ scaling_raw,     // [n, 3]
+        size_t n,
+        float min_opacity,
+        int opacity_dim) {
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= n)
+            return;
+
+        // Clamp opacity
+        float opacity_clamped = fminf(fmaxf(opacities[idx], min_opacity), 1.0f - 1e-7f);
+
+        // Inverse sigmoid: log(opacity / (1 - opacity))
+        float opacity_raw_val = logf(opacity_clamped / (1.0f - opacity_clamped));
+
+        // Write opacity (handle both [n] and [n, 1] shapes)
+        if (opacity_dim == 1) {
+            opacity_raw[idx] = opacity_raw_val; // [n, 1] is still indexed linearly
+        } else {
+            opacity_raw[idx] = opacity_raw_val; // [n]
+        }
+
+        // Log of scales (3 values)
+        for (int i = 0; i < 3; ++i) {
+            scaling_raw[idx * 3 + i] = logf(scales[idx * 3 + i]);
+        }
+    }
+
+    // Kernel to update scaling and opacity at specific indices (avoids index_put_ which loses capacity)
+    __global__ void update_scaling_opacity_kernel(
+        const int64_t* __restrict__ indices,
+        const float* __restrict__ new_scaling,     // [n_indices, 3]
+        const float* __restrict__ new_opacity_raw, // [n_indices] or [n_indices, 1]
+        float* __restrict__ scaling_raw,
+        float* __restrict__ opacity_raw,
+        size_t n_indices,
+        int opacity_dim,
+        size_t N) {
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= n_indices)
+            return;
+
+        int64_t target_idx = indices[idx];
+
+        // Bounds check
+        if (target_idx < 0 || target_idx >= static_cast<int64_t>(N)) {
+            return;
+        }
+
+        // Update scaling [3]
+        for (int i = 0; i < 3; ++i) {
+            scaling_raw[target_idx * 3 + i] = new_scaling[idx * 3 + i];
+        }
+
+        // Update opacity
+        opacity_raw[target_idx] = new_opacity_raw[idx];
+    }
+
+    void launch_compute_raw_values(
+        const float* opacities,
+        const float* scales,
+        float* opacity_raw,
+        float* scaling_raw,
+        size_t n,
+        float min_opacity,
+        int opacity_dim,
+        void* stream) {
+
+        if (n == 0) {
+            return;
+        }
+
+        dim3 threads(256);
+        dim3 grid((n + threads.x - 1) / threads.x);
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        compute_raw_values_kernel<<<grid, threads, 0, cuda_stream>>>(
+            opacities,
+            scales,
+            opacity_raw,
+            scaling_raw,
+            n,
+            min_opacity,
+            opacity_dim);
+    }
+
+    void launch_update_scaling_opacity(
+        const int64_t* indices,
+        const float* new_scaling,
+        const float* new_opacity_raw,
+        float* scaling_raw,
+        float* opacity_raw,
+        size_t n_indices,
+        int opacity_dim,
+        size_t N,
+        void* stream) {
+
+        if (n_indices == 0) {
+            return;
+        }
+
+        dim3 threads(256);
+        dim3 grid((n_indices + threads.x - 1) / threads.x);
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        update_scaling_opacity_kernel<<<grid, threads, 0, cuda_stream>>>(
+            indices,
+            new_scaling,
+            new_opacity_raw,
+            scaling_raw,
+            opacity_raw,
+            n_indices,
+            opacity_dim,
+            N);
+    }
+
+    // Fused copy kernel - copies all parameters from src_indices to dst_indices
+    __global__ void copy_gaussian_params_kernel(
+        const int64_t* __restrict__ src_indices,
+        const int64_t* __restrict__ dst_indices,
+        float* __restrict__ means,
+        float* __restrict__ sh0,
+        float* __restrict__ shN,
+        float* __restrict__ scales,
+        float* __restrict__ rotations,
+        float* __restrict__ opacities,
+        size_t n_copy,
+        size_t sh_rest,
+        int opacity_dim,
+        size_t N) { // Add N parameter for bounds checking
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= n_copy)
+            return;
+
+        int64_t src_idx = src_indices[idx];
+        int64_t dst_idx = dst_indices[idx];
+
+        // Bounds check - CRITICAL for safety
+        if (src_idx < 0 || src_idx >= static_cast<int64_t>(N) ||
+            dst_idx < 0 || dst_idx >= static_cast<int64_t>(N)) {
+            // Invalid index - skip this copy
+            return;
+        }
+
+        // Copy means [3]
+        for (int i = 0; i < 3; ++i) {
+            means[dst_idx * 3 + i] = means[src_idx * 3 + i];
+        }
+
+        // Copy sh0 [1, 3] -> [3]
+        for (int i = 0; i < 3; ++i) {
+            sh0[dst_idx * 3 + i] = sh0[src_idx * 3 + i];
+        }
+
+        // Copy shN [sh_rest, 3]
+        for (size_t i = 0; i < sh_rest * 3; ++i) {
+            shN[dst_idx * sh_rest * 3 + i] = shN[src_idx * sh_rest * 3 + i];
+        }
+
+        // Copy scales [3]
+        for (int i = 0; i < 3; ++i) {
+            scales[dst_idx * 3 + i] = scales[src_idx * 3 + i];
+        }
+
+        // Copy rotations [4]
+        for (int i = 0; i < 4; ++i) {
+            rotations[dst_idx * 4 + i] = rotations[src_idx * 4 + i];
+        }
+
+        // Copy opacities [1] or []
+        if (opacity_dim == 1) {
+            opacities[dst_idx] = opacities[src_idx];
+        } else {
+            opacities[dst_idx] = opacities[src_idx];
+        }
+    }
+
+    void launch_copy_gaussian_params(
+        const int64_t* src_indices,
+        const int64_t* dst_indices,
+        float* means,
+        float* sh0,
+        float* shN,
+        float* scales,
+        float* rotations,
+        float* opacities,
+        size_t n_copy,
+        size_t sh_rest,
+        int opacity_dim,
+        size_t N, // Add N parameter
+        void* stream) {
+
+        if (n_copy == 0) {
+            return;
+        }
+
+        dim3 threads(256);
+        dim3 grid((n_copy + threads.x - 1) / threads.x);
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        copy_gaussian_params_kernel<<<grid, threads, 0, cuda_stream>>>(
+            src_indices,
+            dst_indices,
+            means,
+            sh0,
+            shN,
+            scales,
+            rotations,
+            opacities,
+            n_copy,
+            sh_rest,
+            opacity_dim,
+            N);
+    }
+
+    // Histogram kernel using atomics - counts occurrences of each index
+    __global__ void histogram_kernel(
+        const int64_t* __restrict__ indices,
+        int32_t* __restrict__ counts,
+        size_t n_samples,
+        size_t N) {
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= n_samples)
+            return;
+
+        int64_t index = indices[idx];
+
+        // Bounds check
+        if (index < 0 || index >= static_cast<int64_t>(N))
+            return;
+
+        // Atomic increment
+        atomicAdd(&counts[index], 1);
+    }
+
+    void launch_histogram(
+        const int64_t* indices,
+        int32_t* counts,
+        size_t n_samples,
+        size_t N,
+        void* stream) {
+
+        if (n_samples == 0)
+            return;
+
+        dim3 threads(256);
+        dim3 grid((n_samples + threads.x - 1) / threads.x);
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        histogram_kernel<<<grid, threads, 0, cuda_stream>>>(
+            indices, counts, n_samples, N);
+    }
+
+    // Smarter histogram: Use hash map-style approach with sorting
+    // This works well when n_samples << N (which is our case)
+    __global__ void histogram_gather_sorted_kernel(
+        const int64_t* __restrict__ indices,
+        int32_t* __restrict__ output_counts,
+        size_t n_samples,
+        size_t N) {
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= n_samples)
+            return;
+
+        int64_t my_index = indices[idx];
+
+        // Bounds check
+        if (my_index < 0 || my_index >= static_cast<int64_t>(N)) {
+            output_counts[idx] = 0;
+            return;
+        }
+
+        // Count occurrences: scan forward until we find a different index
+        // This works ONLY if indices are sorted or if we accept O(n) per thread
+        // Since indices are NOT sorted, we do linear scan (unavoidable without large temp storage)
+
+        // Optimization: Use warp-level primitives to speed up counting
+        int32_t count = 0;
+
+        // Each thread scans the array looking for matches
+        // This is O(n) per thread, total O(n*n_samples)
+        // BUT: We can optimize using warp primitives
+
+        const int WARP_SIZE = 32;
+        int lane_id = threadIdx.x % WARP_SIZE;
+
+        // Each warp cooperatively counts for one index
+        for (size_t i = lane_id; i < n_samples; i += WARP_SIZE) {
+            if (indices[i] == my_index) {
+                count++;
+            }
+        }
+
+        // Warp-level reduction to sum counts
+        for (int offset = WARP_SIZE / 2; offset > 0; offset /= 2) {
+            count += __shfl_down_sync(0xffffffff, count, offset);
+        }
+
+        // First lane writes the result
+        if (lane_id == 0) {
+            output_counts[idx] = count;
+        }
+    }
+
+    void launch_histogram_sort(
+        const int64_t* indices,
+        int32_t* output_counts,
+        size_t n_samples,
+        void* stream) {
+
+        if (n_samples == 0)
+            return;
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        // Algorithm: Sort indices, then use adjacent_difference to find run boundaries,
+        // then use inclusive_scan to count run lengths, then scatter back to original positions
+
+        // Step 1: Create position array and copy indices
+        thrust::device_vector<int32_t> orig_positions(n_samples);
+        thrust::sequence(thrust::cuda::par.on(cuda_stream), orig_positions.begin(), orig_positions.end());
+
+        thrust::device_vector<int64_t> sorted_indices(indices, indices + n_samples);
+
+        // Step 2: Sort indices while tracking original positions
+        thrust::sort_by_key(thrust::cuda::par.on(cuda_stream),
+                            sorted_indices.begin(), sorted_indices.end(),
+                            orig_positions.begin());
+
+        // Step 3: Mark segment boundaries (1 where index changes, 0 otherwise)
+        thrust::device_vector<int32_t> head_flags(n_samples);
+        thrust::adjacent_difference(thrust::cuda::par.on(cuda_stream),
+                                    sorted_indices.begin(), sorted_indices.end(),
+                                    head_flags.begin(),
+                                    thrust::not_equal_to<int64_t>());
+        // First element is always a segment head
+        if (n_samples > 0) {
+            thrust::fill_n(thrust::cuda::par.on(cuda_stream), head_flags.begin(), 1, 1);
+        }
+
+        // Step 4: Compute run lengths with exclusive_scan_by_key
+        // This gives each element its position within its segment
+        thrust::device_vector<int32_t> run_positions(n_samples);
+        thrust::device_vector<int32_t> ones(n_samples, 1);
+
+        thrust::exclusive_scan_by_key(thrust::cuda::par.on(cuda_stream),
+                                      sorted_indices.begin(), sorted_indices.end(),
+                                      ones.begin(),
+                                      run_positions.begin());
+
+        // Step 5: Find the tail of each segment and compute run length
+        // Use a kernel to compute the count for each element
+        thrust::device_vector<int32_t> run_counts(n_samples);
+
+        thrust::transform(thrust::cuda::par.on(cuda_stream),
+                          thrust::make_counting_iterator<int>(0),
+                          thrust::make_counting_iterator<int>(n_samples),
+                          run_counts.begin(),
+                          [sorted_indices_ptr = thrust::raw_pointer_cast(sorted_indices.data()),
+                           run_positions_ptr = thrust::raw_pointer_cast(run_positions.data()),
+                           n_samples] __device__(int idx) {
+                              int64_t my_index = sorted_indices_ptr[idx];
+                              int my_pos = run_positions_ptr[idx];
+
+                              // Find the last occurrence of this index
+                              int count = 1;
+                              if (idx + 1 < n_samples && sorted_indices_ptr[idx + 1] == my_index) {
+                                  // Not the last in segment, find it
+                                  for (int i = idx + 1; i < n_samples && sorted_indices_ptr[i] == my_index; ++i) {
+                                      count = run_positions_ptr[i] + 1;
+                                  }
+                              } else {
+                                  // Last in segment
+                                  count = my_pos + 1;
+                              }
+                              return count;
+                          });
+
+        // Step 6: Scatter counts back to original positions
+        thrust::scatter(thrust::cuda::par.on(cuda_stream),
+                        run_counts.begin(), run_counts.end(),
+                        orig_positions.begin(),
+                        output_counts);
+    }
+
+    // Fused gather kernel for 2 tensors - replaces 2x index_select
+    // OPTIMIZED: Unroll loops for common cases
+    __global__ void gather_2tensors_kernel(
+        const int64_t* __restrict__ indices,
+        const float* __restrict__ src_a,
+        const float* __restrict__ src_b,
+        float* __restrict__ dst_a,
+        float* __restrict__ dst_b,
+        size_t n_samples,
+        size_t dim_a,
+        size_t dim_b,
+        size_t N) {
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= n_samples)
+            return;
+
+        int64_t src_idx = indices[idx];
+
+        // Bounds check - CRITICAL for safety
+        if (src_idx < 0 || src_idx >= static_cast<int64_t>(N)) {
+            // Zero the output for invalid indices
+            for (size_t i = 0; i < dim_a; ++i)
+                dst_a[idx * dim_a + i] = 0.0f;
+            for (size_t i = 0; i < dim_b; ++i)
+                dst_b[idx * dim_b + i] = 0.0f;
+            return;
+        }
+
+        // Fast path for common case: dim_a=1, dim_b=3
+        if (dim_a == 1 && dim_b == 3) {
+            dst_a[idx] = src_a[src_idx];
+            dst_b[idx * 3 + 0] = src_b[src_idx * 3 + 0];
+            dst_b[idx * 3 + 1] = src_b[src_idx * 3 + 1];
+            dst_b[idx * 3 + 2] = src_b[src_idx * 3 + 2];
+            return;
+        }
+
+        // General case: Gather first tensor (dim_a elements)
+        for (size_t i = 0; i < dim_a; ++i) {
+            dst_a[idx * dim_a + i] = src_a[src_idx * dim_a + i];
+        }
+
+        // Gather second tensor (dim_b elements)
+        for (size_t i = 0; i < dim_b; ++i) {
+            dst_b[idx * dim_b + i] = src_b[src_idx * dim_b + i];
+        }
+    }
+
+    void launch_gather_2tensors(
+        const int64_t* indices,
+        const float* src_a,
+        const float* src_b,
+        float* dst_a,
+        float* dst_b,
+        size_t n_samples,
+        size_t dim_a,
+        size_t dim_b,
+        size_t N,
+        void* stream) {
+
+        if (n_samples == 0)
+            return;
+
+        dim3 threads(256);
+        dim3 grid((n_samples + threads.x - 1) / threads.x);
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        gather_2tensors_kernel<<<grid, threads, 0, cuda_stream>>>(
+            indices,
+            src_a,
+            src_b,
+            dst_a,
+            dst_b,
+            n_samples,
+            dim_a,
+            dim_b,
+            N);
+    }
+
+    // ============================================================================
+    // FUSED: Multinomial Sample + Gather
+    // ============================================================================
+
+    /**
+     * Fused multinomial sampling + gather kernel
+     *
+     * Performs multinomial sampling from opacities[alive_indices] and directly
+     * gathers the results WITHOUT any intermediate tensor allocations.
+     *
+     * Each thread:
+     * 1. Generates a random sample u ∈ [0, prob_sum]
+     * 2. Performs cumulative sum search through opacities[alive_indices[i]]
+     * 3. Finds the index where cumsum >= u
+     * 4. Outputs the global index and directly gathers opacity/scales
+     */
+    // Block-cooperative reduction of sampling_weights[alive_indices] via shared memory
+    __global__ void reduce_weights_kernel(
+        const float* __restrict__ sampling_weights,
+        const int64_t* __restrict__ alive_indices,
+        size_t n_alive,
+        float* __restrict__ partial_sums,
+        size_t N) {
+
+        extern __shared__ float sdata[];
+
+        const size_t tid = threadIdx.x;
+        const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+        float sum = 0.0f;
+        if (idx < n_alive) {
+            const int64_t global_i = alive_indices[idx];
+            if (global_i >= 0 && global_i < static_cast<int64_t>(N)) {
+                sum = sampling_weights[global_i];
+            }
+        }
+        sdata[tid] = sum;
+        __syncthreads();
+
+        for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+            if (tid < s) {
+                sdata[tid] += sdata[tid + s];
+            }
+            __syncthreads();
+        }
+
+        if (tid == 0) {
+            partial_sums[blockIdx.x] = sdata[0];
+        }
+    }
+
+    __global__ void multinomial_sample_and_gather_kernel(
+        const float* __restrict__ opacities,
+        const float* __restrict__ scaling_raw, // raw scaling, exp() applied inline
+        const int64_t* __restrict__ alive_indices,
+        const float* __restrict__ cumsum,
+        size_t n_alive,
+        size_t n_samples,
+        float prob_sum,
+        uint64_t seed,
+        int64_t* __restrict__ sampled_global_indices,
+        float* __restrict__ sampled_opacities,
+        float* __restrict__ sampled_scales,
+        size_t N) {
+
+        const size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= n_samples)
+            return;
+
+        curandState state;
+        curand_init(seed, idx, 0, &state);
+
+        const float u = curand_uniform(&state) * prob_sum;
+
+        int left = 0;
+        int right = n_alive - 1;
+        int selected_idx = n_alive - 1;
+
+        while (left <= right) {
+            const int mid = (left + right) / 2;
+            if (cumsum[mid] >= u) {
+                selected_idx = mid;
+                right = mid - 1;
+            } else {
+                left = mid + 1;
+            }
+        }
+
+        const int64_t selected_global_idx = alive_indices[selected_idx];
+
+        sampled_global_indices[idx] = selected_global_idx;
+        sampled_opacities[idx] = opacities[selected_global_idx];
+        sampled_scales[idx * 3 + 0] = expf(scaling_raw[selected_global_idx * 3 + 0]);
+        sampled_scales[idx * 3 + 1] = expf(scaling_raw[selected_global_idx * 3 + 1]);
+        sampled_scales[idx * 3 + 2] = expf(scaling_raw[selected_global_idx * 3 + 2]);
+    }
+
+    void launch_multinomial_sample_and_gather(
+        const float* sampling_weights,
+        const float* opacities,
+        const float* scaling_raw,
+        const int64_t* alive_indices,
+        size_t n_alive,
+        size_t n_samples,
+        uint64_t seed,
+        int64_t* sampled_global_indices,
+        float* sampled_opacities,
+        float* sampled_scales,
+        size_t N,
+        void* stream) {
+
+        if (n_samples == 0 || n_alive == 0)
+            return;
+
+        const cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        const int threads = 256;
+        const int blocks = (n_alive + threads - 1) / threads;
+        const size_t shared_mem_size = threads * sizeof(float);
+
+        float* d_partial_sums = nullptr;
+        cudaMallocAsync(&d_partial_sums, blocks * sizeof(float), cuda_stream);
+
+        // Launch block-level reduction
+        reduce_weights_kernel<<<blocks, threads, shared_mem_size, cuda_stream>>>(
+            sampling_weights, alive_indices, n_alive, d_partial_sums, N);
+
+        // Final reduction on CPU (small array)
+        std::vector<float> h_partial_sums(blocks);
+        cudaMemcpyAsync(h_partial_sums.data(), d_partial_sums, blocks * sizeof(float), cudaMemcpyDeviceToHost, cuda_stream);
+        cudaStreamSynchronize(cuda_stream); // Wait for copy to complete
+
+        float prob_sum = 0.0f;
+        for (int i = 0; i < blocks; ++i) {
+            prob_sum += h_partial_sums[i];
+        }
+
+        // Free temp buffer
+        cudaFreeAsync(d_partial_sums, cuda_stream);
+
+        if (prob_sum <= 0.0f) {
+            // All zero probabilities - just sample uniformly
+            cudaMemsetAsync(sampled_global_indices, 0, n_samples * sizeof(int64_t), cuda_stream);
+            cudaMemsetAsync(sampled_opacities, 0, n_samples * sizeof(float), cuda_stream);
+            cudaMemsetAsync(sampled_scales, 0, n_samples * 3 * sizeof(float), cuda_stream);
+            return;
+        }
+
+        auto alive_probs = lfs::core::Tensor::empty({n_alive}, lfs::core::Device::CUDA, lfs::core::DataType::Float32);
+        auto cumsum_buf = lfs::core::Tensor::empty({n_alive}, lfs::core::Device::CUDA, lfs::core::DataType::Float32);
+
+        thrust::transform(thrust::cuda::par.on(cuda_stream),
+                          thrust::counting_iterator<int>(0),
+                          thrust::counting_iterator<int>(n_alive),
+                          thrust::device_ptr<float>(alive_probs.ptr<float>()),
+                          [=] __device__(int i) { return sampling_weights[alive_indices[i]]; });
+
+        void* d_temp_storage = nullptr;
+        size_t temp_storage_bytes = 0;
+        cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes,
+                                      alive_probs.ptr<float>(), cumsum_buf.ptr<float>(), n_alive, cuda_stream);
+        cudaMallocAsync(&d_temp_storage, temp_storage_bytes, cuda_stream);
+        cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes,
+                                      alive_probs.ptr<float>(), cumsum_buf.ptr<float>(), n_alive, cuda_stream);
+
+        const dim3 sample_threads(256);
+        const dim3 sample_grid((n_samples + sample_threads.x - 1) / sample_threads.x);
+
+        multinomial_sample_and_gather_kernel<<<sample_grid, sample_threads, 0, cuda_stream>>>(
+            opacities,
+            scaling_raw,
+            alive_indices,
+            cumsum_buf.ptr<float>(),
+            n_alive,
+            n_samples,
+            prob_sum,
+            seed,
+            sampled_global_indices,
+            sampled_opacities,
+            sampled_scales,
+            N);
+
+        cudaFreeAsync(d_temp_storage, cuda_stream);
+    }
+
+    // Multinomial sampling from all N weights (no alive_indices indirection)
+    __global__ void multinomial_sample_all_kernel(
+        const float* __restrict__ opacities,
+        const float* __restrict__ scaling_raw, // raw scaling, exp() applied inline
+        const float* __restrict__ cumsum,
+        size_t N,
+        size_t n_samples,
+        float prob_sum,
+        uint64_t seed,
+        int64_t* __restrict__ sampled_indices,
+        float* __restrict__ sampled_opacities,
+        float* __restrict__ sampled_scales) {
+
+        const size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= n_samples)
+            return;
+
+        curandState state;
+        curand_init(seed, idx, 0, &state);
+
+        const float u = curand_uniform(&state) * prob_sum;
+
+        int left = 0;
+        int right = N - 1;
+        int64_t selected_idx = N - 1;
+
+        while (left <= right) {
+            const int mid = (left + right) / 2;
+            if (cumsum[mid] >= u) {
+                selected_idx = mid;
+                right = mid - 1;
+            } else {
+                left = mid + 1;
+            }
+        }
+
+        sampled_indices[idx] = selected_idx;
+        sampled_opacities[idx] = opacities[selected_idx];
+        sampled_scales[idx * 3 + 0] = expf(scaling_raw[selected_idx * 3 + 0]);
+        sampled_scales[idx * 3 + 1] = expf(scaling_raw[selected_idx * 3 + 1]);
+        sampled_scales[idx * 3 + 2] = expf(scaling_raw[selected_idx * 3 + 2]);
+    }
+
+    // Block-cooperative reduction of all sampling weights via shared memory
+    __global__ void reduce_all_weights_kernel(
+        const float* __restrict__ sampling_weights,
+        size_t N,
+        float* __restrict__ partial_sums) {
+
+        extern __shared__ float sdata[];
+
+        const size_t tid = threadIdx.x;
+        const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+        float sum = 0.0f;
+        if (idx < N) {
+            sum = sampling_weights[idx];
+        }
+        sdata[tid] = sum;
+        __syncthreads();
+
+        for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+            if (tid < s) {
+                sdata[tid] += sdata[tid + s];
+            }
+            __syncthreads();
+        }
+
+        if (tid == 0) {
+            partial_sums[blockIdx.x] = sdata[0];
+        }
+    }
+
+    void launch_multinomial_sample_all(
+        const float* sampling_weights,
+        const float* opacities,
+        const float* scaling_raw,
+        size_t N,
+        size_t n_samples,
+        uint64_t seed,
+        int64_t* sampled_indices,
+        float* sampled_opacities,
+        float* sampled_scales,
+        void* stream) {
+
+        if (n_samples == 0 || N == 0)
+            return;
+
+        const cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        const int threads = 256;
+        const int blocks = (N + threads - 1) / threads;
+        const size_t shared_mem_size = threads * sizeof(float);
+
+        float* d_partial_sums = nullptr;
+        cudaMallocAsync(&d_partial_sums, blocks * sizeof(float), cuda_stream);
+
+        // Launch block-level reduction
+        reduce_all_weights_kernel<<<blocks, threads, shared_mem_size, cuda_stream>>>(
+            sampling_weights, N, d_partial_sums);
+
+        // Final reduction on CPU (small array)
+        std::vector<float> h_partial_sums(blocks);
+        cudaMemcpyAsync(h_partial_sums.data(), d_partial_sums, blocks * sizeof(float), cudaMemcpyDeviceToHost, cuda_stream);
+        cudaStreamSynchronize(cuda_stream); // Wait for copy to complete
+
+        float prob_sum = 0.0f;
+        for (int i = 0; i < blocks; ++i) {
+            prob_sum += h_partial_sums[i];
+        }
+
+        // Free temp buffer
+        cudaFreeAsync(d_partial_sums, cuda_stream);
+
+        if (prob_sum <= 0.0f) {
+            // All zero probabilities - return zeros
+            cudaMemsetAsync(sampled_indices, 0, n_samples * sizeof(int64_t), cuda_stream);
+            cudaMemsetAsync(sampled_opacities, 0, n_samples * sizeof(float), cuda_stream);
+            cudaMemsetAsync(sampled_scales, 0, n_samples * 3 * sizeof(float), cuda_stream);
+            return;
+        }
+
+        auto cumsum_buf = lfs::core::Tensor::empty({N}, lfs::core::Device::CUDA, lfs::core::DataType::Float32);
+
+        void* d_temp_storage = nullptr;
+        size_t temp_storage_bytes = 0;
+        cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes,
+                                      sampling_weights, cumsum_buf.ptr<float>(), N, cuda_stream);
+        cudaMallocAsync(&d_temp_storage, temp_storage_bytes, cuda_stream);
+        cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes,
+                                      sampling_weights, cumsum_buf.ptr<float>(), N, cuda_stream);
+
+        const dim3 sample_threads(256);
+        const dim3 sample_grid((n_samples + sample_threads.x - 1) / sample_threads.x);
+
+        multinomial_sample_all_kernel<<<sample_grid, sample_threads, 0, cuda_stream>>>(
+            opacities,
+            scaling_raw,
+            cumsum_buf.ptr<float>(),
+            N,
+            n_samples,
+            prob_sum,
+            seed,
+            sampled_indices,
+            sampled_opacities,
+            sampled_scales);
+
+        cudaFreeAsync(d_temp_storage, cuda_stream);
+    }
+
+    // Compute rotation magnitude squared kernel (eliminates [N,4] intermediate tensor)
+    __global__ void compute_rotation_mag_sq_kernel(
+        const float* rotations, // [N, 4]
+        float* mag_sq,          // [N]
+        size_t N) {
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= N)
+            return;
+
+        // Each rotation is a quaternion [w, x, y, z] or [x, y, z, w]
+        // Compute ||q||^2 = q[0]^2 + q[1]^2 + q[2]^2 + q[3]^2
+        const float* q = &rotations[idx * 4];
+        mag_sq[idx] = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
+    }
+
+    void launch_compute_rotation_mag_sq(
+        const float* rotations,
+        float* mag_sq,
+        size_t N,
+        void* stream) {
+
+        if (N == 0) {
+            return;
+        }
+
+        dim3 threads(256);
+        dim3 grid((N + threads.x - 1) / threads.x);
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        compute_rotation_mag_sq_kernel<<<grid, threads, 0, cuda_stream>>>(
+            rotations,
+            mag_sq,
+            N);
+    }
+
+    // Fused dead mask computation kernel (ZERO intermediate allocations)
+    __global__ void compute_dead_mask_kernel(
+        const float* opacities, // [N]
+        const float* rotations, // [N, 4]
+        uint8_t* dead_mask,     // [N]
+        size_t N,
+        float min_opacity) {
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= N)
+            return;
+
+        // Check opacity condition: opacity <= min_opacity
+        bool is_dead = opacities[idx] <= min_opacity;
+
+        // Check rotation magnitude condition: ||rotation||^2 < 1e-8
+        if (!is_dead) {
+            const float* q = &rotations[idx * 4];
+            float mag_sq = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
+            is_dead = mag_sq < 1e-8f;
+        }
+
+        dead_mask[idx] = is_dead ? 1 : 0;
+    }
+
+    void launch_compute_dead_mask(
+        const float* opacities,
+        const float* rotations,
+        uint8_t* dead_mask,
+        size_t N,
+        float min_opacity,
+        void* stream) {
+
+        if (N == 0) {
+            return;
+        }
+
+        dim3 threads(256);
+        dim3 grid((N + threads.x - 1) / threads.x);
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        compute_dead_mask_kernel<<<grid, threads, 0, cuda_stream>>>(
+            opacities,
+            rotations,
+            dead_mask,
+            N,
+            min_opacity);
+    }
+
+    __global__ void elementwise_max_inplace_kernel(
+        float* __restrict__ a,
+        const float* __restrict__ b,
+        size_t N) {
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= N)
+            return;
+
+        a[idx] = fmaxf(a[idx], b[idx]);
+    }
+
+    void launch_elementwise_max_inplace(
+        float* a,
+        const float* b,
+        size_t N,
+        void* stream) {
+
+        if (N == 0)
+            return;
+
+        dim3 threads(256);
+        dim3 grid((N + threads.x - 1) / threads.x);
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        elementwise_max_inplace_kernel<<<grid, threads, 0, cuda_stream>>>(a, b, N);
+    }
+
+    // ============================================================================
+    // Mesh-surface constraint: surface-walk Gaussian means across the triangle mesh.
+    // The closest-point helper is retained only for boundary/degenerate fallback inside
+    // the walk; the main path crosses edge-neighbor faces by barycentric boundary hits.
+    // ============================================================================
+
+    // Ericson 7-region barycentric closest-point on triangle (a,b,c) for query p.
+    __device__ inline vec3 closest_point_on_triangle(
+        const vec3& p, const vec3& a, const vec3& b, const vec3& c) {
+        const vec3 ab = b - a;
+        const vec3 ac = c - a;
+        const vec3 ap = p - a;
+
+        const float d1 = glm::dot(ab, ap);
+        const float d2 = glm::dot(ac, ap);
+        if (d1 <= 0.0f && d2 <= 0.0f)
+            return a; // Vertex region a
+
+        const vec3 bp = p - b;
+        const float d3 = glm::dot(ab, bp);
+        const float d4 = glm::dot(ac, bp);
+        if (d3 >= 0.0f && d4 <= d3)
+            return b; // Vertex region b
+
+        const float vc = d1 * d4 - d3 * d2;
+        if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+            const float v = d1 / (d1 - d3);
+            return a + v * ab; // Edge ab
+        }
+
+        const vec3 cp = p - c;
+        const float d5 = glm::dot(ab, cp);
+        const float d6 = glm::dot(ac, cp);
+        if (d6 >= 0.0f && d5 <= d6)
+            return c; // Vertex region c
+
+        const float vb = d5 * d2 - d1 * d6;
+        if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+            const float w = d2 / (d2 - d6);
+            return a + w * ac; // Edge ac
+        }
+
+        const float va = d3 * d6 - d5 * d4;
+        if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+            const float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+            return b + w * (c - b); // Edge bc
+        }
+
+        // Inside face region: barycentric interpolation.
+        const float denom = 1.0f / (va + vb + vc);
+        const float v = vb * denom;
+        const float w = vc * denom;
+        return a + ab * v + ac * w;
+    }
+
+    __device__ inline bool barycentric_on_triangle(
+        const vec3& p,
+        const vec3& a,
+        const vec3& b,
+        const vec3& c,
+        float& u,
+        float& v,
+        float& w) {
+
+        const vec3 v0 = b - a;
+        const vec3 v1 = c - a;
+        const vec3 v2 = p - a;
+        const float d00 = glm::dot(v0, v0);
+        const float d01 = glm::dot(v0, v1);
+        const float d11 = glm::dot(v1, v1);
+        const float d20 = glm::dot(v2, v0);
+        const float d21 = glm::dot(v2, v1);
+        const float denom = d00 * d11 - d01 * d01;
+        if (fabsf(denom) < 1e-20f) {
+            u = 1.0f;
+            v = 0.0f;
+            w = 0.0f;
+            return false;
+        }
+        const float inv_denom = 1.0f / denom;
+        v = (d11 * d20 - d01 * d21) * inv_denom;
+        w = (d00 * d21 - d01 * d20) * inv_denom;
+        u = 1.0f - v - w;
+        return true;
+    }
+
+    __device__ inline vec3 project_to_triangle_plane(
+        const vec3& p, const vec3& a, const vec3& b, const vec3& c) {
+
+        const vec3 n = glm::cross(b - a, c - a);
+        const float n2 = glm::dot(n, n);
+        if (n2 < 1e-20f)
+            return closest_point_on_triangle(p, a, b, c);
+        return p - n * (glm::dot(p - a, n) / n2);
+    }
+
+    __device__ inline void load_triangle(
+        const float* __restrict__ verts,
+        const int32_t* __restrict__ indices,
+        int32_t face,
+        vec3& a,
+        vec3& b,
+        vec3& c) {
+
+        const int32_t i0 = indices[face * 3 + 0];
+        const int32_t i1 = indices[face * 3 + 1];
+        const int32_t i2 = indices[face * 3 + 2];
+        a = vec3(verts[i0 * 3 + 0], verts[i0 * 3 + 1], verts[i0 * 3 + 2]);
+        b = vec3(verts[i1 * 3 + 0], verts[i1 * 3 + 1], verts[i1 * 3 + 2]);
+        c = vec3(verts[i2 * 3 + 0], verts[i2 * 3 + 1], verts[i2 * 3 + 2]);
+    }
+
+    __device__ inline float mesh_constraint_spatial_weight(
+        const vec3& target,
+        const vec3& projected,
+        const vec3& a,
+        const vec3& b,
+        const vec3& c,
+        const float inside_constraint_distance,
+        const float inside_constraint_fade_ratio) {
+        if (!(inside_constraint_distance > 0.0f)) {
+            return 1.0f;
+        }
+        const vec3 displacement = target - projected;
+        const vec3 normal = glm::cross(b - a, c - a);
+        if (glm::dot(displacement, normal) >= 0.0f) {
+            return 1.0f;
+        }
+        const float dist = sqrtf(fmaxf(glm::dot(displacement, displacement), 0.0f));
+        if (dist >= inside_constraint_distance) {
+            return 0.0f;
+        }
+        const float fade_width = inside_constraint_distance * inside_constraint_fade_ratio;
+        const float full_width = inside_constraint_distance - fade_width;
+        if (!(fade_width > 0.0f) || dist <= full_width) {
+            return 1.0f;
+        }
+        const float t = fminf(fmaxf(
+                                  (inside_constraint_distance - dist) / fade_width, 0.0f),
+                              1.0f);
+        return t * t * (3.0f - 2.0f * t);
+    }
+
+    __device__ inline void write_spatially_gated_projection(
+        float* __restrict__ means,
+        const size_t idx,
+        const vec3& target,
+        const vec3& projected,
+        const vec3& a,
+        const vec3& b,
+        const vec3& c,
+        const float inside_constraint_distance,
+        const float inside_constraint_fade_ratio) {
+        if (!(inside_constraint_distance > 0.0f)) {
+            means[idx * 3 + 0] = projected.x;
+            means[idx * 3 + 1] = projected.y;
+            means[idx * 3 + 2] = projected.z;
+            return;
+        }
+        const float weight = mesh_constraint_spatial_weight(
+            target, projected, a, b, c,
+            inside_constraint_distance, inside_constraint_fade_ratio);
+        const vec3 result = target + (projected - target) * weight;
+        means[idx * 3 + 0] = result.x;
+        means[idx * 3 + 1] = result.y;
+        means[idx * 3 + 2] = result.z;
+    }
+
+    // ----------------------------------------------------------------------------
+    // Surface-walk projection. Unlike closest-point projection, this treats the
+    // optimizer/noise result as a displacement from the previous on-surface point
+    // and crosses mesh edges into neighboring faces. Valid interior movement on a
+    // neighboring face therefore stays interior instead of being clamped to the edge.
+    // ----------------------------------------------------------------------------
+    __global__ void surface_walk_project_kernel(
+        const float* __restrict__ prev_means,
+        float* __restrict__ means,
+        int32_t* __restrict__ birth_tri,
+        const int32_t* __restrict__ edge_neighbors,
+        const float* __restrict__ verts,
+        const int32_t* __restrict__ indices,
+        size_t N,
+        size_t F,
+        int max_walk_steps,
+        float inside_constraint_distance,
+        float inside_constraint_fade_ratio) {
+
+        const size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= N)
+            return;
+
+        int32_t face = birth_tri[idx];
+        if (face < 0 || static_cast<size_t>(face) >= F)
+            return;
+
+        const vec3 start(prev_means[idx * 3 + 0], prev_means[idx * 3 + 1], prev_means[idx * 3 + 2]);
+        const vec3 target(means[idx * 3 + 0], means[idx * 3 + 1], means[idx * 3 + 2]);
+
+        vec3 current = start;
+        constexpr float bary_eps = 1e-5f;
+
+        for (int step = 0; step < max_walk_steps; ++step) {
+            if (face < 0 || static_cast<size_t>(face) >= F)
+                break;
+
+            vec3 a, b, c;
+            load_triangle(verts, indices, face, a, b, c);
+
+            current = project_to_triangle_plane(current, a, b, c);
+            const vec3 candidate = project_to_triangle_plane(target, a, b, c);
+
+            float cu, cv, cw;
+            if (!barycentric_on_triangle(current, a, b, c, cu, cv, cw)) {
+                const vec3 q = closest_point_on_triangle(target, a, b, c);
+                write_spatially_gated_projection(
+                    means, idx, target, q, a, b, c,
+                    inside_constraint_distance, inside_constraint_fade_ratio);
+                birth_tri[idx] = face;
+                return;
+            }
+
+            float u, v, w;
+            if (!barycentric_on_triangle(candidate, a, b, c, u, v, w)) {
+                const vec3 q = closest_point_on_triangle(target, a, b, c);
+                write_spatially_gated_projection(
+                    means, idx, target, q, a, b, c,
+                    inside_constraint_distance, inside_constraint_fade_ratio);
+                birth_tri[idx] = face;
+                return;
+            }
+
+            if (u >= -bary_eps && v >= -bary_eps && w >= -bary_eps) {
+                write_spatially_gated_projection(
+                    means, idx, target, candidate, a, b, c,
+                    inside_constraint_distance, inside_constraint_fade_ratio);
+                birth_tri[idx] = face;
+                return;
+            }
+
+            float best_t = 2.0f;
+            int crossed_edge = -1;
+
+            if (u < -bary_eps) { // u < 0 crosses edge BC
+                const float denom = cu - u;
+                if (denom > 1e-12f) {
+                    const float t = fminf(fmaxf(cu / denom, 0.0f), 1.0f);
+                    if (t < best_t) {
+                        best_t = t;
+                        crossed_edge = 0;
+                    }
+                }
+            }
+            if (v < -bary_eps) { // v < 0 crosses edge CA
+                const float denom = cv - v;
+                if (denom > 1e-12f) {
+                    const float t = fminf(fmaxf(cv / denom, 0.0f), 1.0f);
+                    if (t < best_t) {
+                        best_t = t;
+                        crossed_edge = 1;
+                    }
+                }
+            }
+            if (w < -bary_eps) { // w < 0 crosses edge AB
+                const float denom = cw - w;
+                if (denom > 1e-12f) {
+                    const float t = fminf(fmaxf(cw / denom, 0.0f), 1.0f);
+                    if (t < best_t) {
+                        best_t = t;
+                        crossed_edge = 2;
+                    }
+                }
+            }
+
+            if (crossed_edge < 0) {
+                const vec3 q = closest_point_on_triangle(candidate, a, b, c);
+                write_spatially_gated_projection(
+                    means, idx, target, q, a, b, c,
+                    inside_constraint_distance, inside_constraint_fade_ratio);
+                birth_tri[idx] = face;
+                return;
+            }
+
+            const int32_t next_face = edge_neighbors[face * 3 + crossed_edge];
+            if (next_face < 0 || static_cast<size_t>(next_face) >= F) {
+                const vec3 q = closest_point_on_triangle(candidate, a, b, c);
+                write_spatially_gated_projection(
+                    means, idx, target, q, a, b, c,
+                    inside_constraint_distance, inside_constraint_fade_ratio);
+                birth_tri[idx] = face;
+                return;
+            }
+
+            current = current + (candidate - current) * best_t;
+            face = next_face;
+        }
+
+        if (face >= 0 && static_cast<size_t>(face) < F) {
+            vec3 a, b, c;
+            load_triangle(verts, indices, face, a, b, c);
+            const vec3 q = closest_point_on_triangle(target, a, b, c);
+            write_spatially_gated_projection(
+                means, idx, target, q, a, b, c,
+                inside_constraint_distance, inside_constraint_fade_ratio);
+            birth_tri[idx] = face;
+        }
+    }
+
+    void launch_surface_walk_project(
+        const float* prev_means,
+        float* means,
+        int32_t* birth_tri,
+        const int32_t* edge_neighbors,
+        const float* verts,
+        const int32_t* indices,
+        size_t N,
+        size_t F,
+        int max_walk_steps,
+        float inside_constraint_distance,
+        float inside_constraint_fade_ratio,
+        void* stream) {
+
+        if (N == 0 || F == 0 || prev_means == nullptr || means == nullptr ||
+            birth_tri == nullptr || edge_neighbors == nullptr ||
+            verts == nullptr || indices == nullptr || max_walk_steps <= 0)
+            return;
+
+        dim3 threads(256);
+        dim3 grid((N + threads.x - 1) / threads.x);
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        surface_walk_project_kernel<<<grid, threads, 0, cuda_stream>>>(
+            prev_means, means, birth_tri, edge_neighbors, verts, indices,
+            N, F, max_walk_steps,
+            inside_constraint_distance, inside_constraint_fade_ratio);
+    }
+
+} // namespace lfs::training::mcmc

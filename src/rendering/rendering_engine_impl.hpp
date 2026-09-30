@@ -1,0 +1,167 @@
+/* SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+#pragma once
+
+#include "axes_renderer.hpp"
+#include "bbox_renderer.hpp"
+#include "camera_frustum_renderer.hpp"
+#include "depth_compositor.hpp"
+#include "ellipsoid_renderer.hpp"
+#include "grid_renderer.hpp"
+#include "mesh_renderer.hpp"
+#include "pivot_renderer.hpp"
+#include "rendering/rendering.hpp"
+#include "rendering_pipeline.hpp"
+#include "screen_renderer.hpp"
+#include "shader_manager.hpp"
+#include "split_view_renderer.hpp"
+#include "viewport_gizmo.hpp"
+
+namespace lfs::rendering {
+
+    class RenderingEngineImpl : public RenderingEngine {
+    public:
+        RenderingEngineImpl();
+        ~RenderingEngineImpl() override;
+
+        Result<void> initialize() override;
+        void shutdown() override;
+        bool isInitialized() const override;
+
+        Result<RenderResult> renderGaussians(
+            const lfs::core::SplatData& splat_data,
+            const RenderRequest& request) override;
+
+        Result<RenderResult> renderPointCloud(
+            const lfs::core::PointCloud& point_cloud,
+            const RenderRequest& request) override;
+
+        Result<RenderResult> renderSplitView(
+            const SplitViewRequest& request) override;
+
+        Result<void> renderMesh(
+            const lfs::core::MeshData& mesh,
+            const ViewportData& viewport,
+            const glm::mat4& model_transform = glm::mat4(1.0f),
+            const MeshRenderOptions& options = {},
+            bool use_fbo = false) override;
+
+        unsigned int getMeshColorTexture() const override;
+        unsigned int getMeshDepthTexture() const override;
+        unsigned int getMeshFramebuffer() const override;
+        bool hasMeshRender() const override;
+        void resetMeshFrameState() override { mesh_rendered_this_frame_ = false; }
+
+        Result<void> compositeMeshAndSplat(
+            const RenderResult& splat_result,
+            const glm::ivec2& viewport_size) override;
+
+        Result<void> presentMeshOnly() override;
+
+        Result<void> presentToScreen(
+            const RenderResult& result,
+            const glm::ivec2& viewport_pos,
+            const glm::ivec2& viewport_size) override;
+
+        Result<void> renderGrid(
+            const ViewportData& viewport,
+            GridPlane plane,
+            float opacity) override;
+
+        Result<void> renderBoundingBox(
+            const BoundingBox& box,
+            const ViewportData& viewport,
+            const glm::vec3& color,
+            float line_width) override;
+
+        Result<void> renderEllipsoid(
+            const Ellipsoid& ellipsoid,
+            const ViewportData& viewport,
+            const glm::vec3& color,
+            float line_width) override;
+
+        Result<void> renderCoordinateAxes(
+            const ViewportData& viewport,
+            float size,
+            const std::array<bool, 3>& visible,
+            bool equirectangular = false) override;
+
+        Result<void> renderPivot(
+            const ViewportData& viewport,
+            const glm::vec3& pivot_position,
+            float size = 50.0f,
+            float opacity = 1.0f) override;
+
+        Result<void> renderViewportGizmo(
+            const glm::mat3& camera_rotation,
+            const glm::vec2& viewport_pos,
+            const glm::vec2& viewport_size) override;
+
+        int hitTestViewportGizmo(
+            const glm::vec2& click_pos,
+            const glm::vec2& viewport_pos,
+            const glm::vec2& viewport_size) const override;
+
+        void setViewportGizmoHover(int axis) override;
+
+        Result<void> renderCameraFrustumsWithHighlight(
+            const std::vector<std::shared_ptr<const lfs::core::Camera>>& cameras,
+            const ViewportData& viewport,
+            float scale,
+            const glm::vec3& train_color,
+            const glm::vec3& eval_color,
+            int highlight_index,
+            const glm::mat4& scene_transform = glm::mat4(1.0f),
+            bool equirectangular_view = false,
+            const std::unordered_set<int>& disabled_uids = {},
+            const std::unordered_set<int>& selected_uids = {}) override;
+
+        Result<int> pickCameraFrustum(
+            const std::vector<std::shared_ptr<const lfs::core::Camera>>& cameras,
+            const glm::vec2& mouse_pos,
+            const glm::vec2& viewport_pos,
+            const glm::vec2& viewport_size,
+            const ViewportData& viewport,
+            float scale,
+            const glm::mat4& scene_transform = glm::mat4(1.0f)) override;
+
+        void clearFrustumCache() override;
+
+    private:
+        Result<void> initializeShaders();
+        glm::mat4 createProjectionMatrix(const ViewportData& viewport) const;
+        glm::mat4 createViewMatrix(const ViewportData& viewport) const;
+
+        RenderingPipeline pipeline_;
+        std::shared_ptr<ScreenQuadRenderer> screen_renderer_;
+        std::unique_ptr<SplitViewRenderer> split_view_renderer_;
+
+        RenderInfiniteGrid grid_renderer_;
+        RenderBoundingBox bbox_renderer_;
+        EllipsoidRenderer ellipsoid_renderer_;
+        RenderCoordinateAxes axes_renderer_;
+        ViewportGizmo viewport_gizmo_;
+        CameraFrustumRenderer camera_frustum_renderer_;
+        RenderPivotPoint pivot_renderer_;
+
+        MeshRenderer mesh_renderer_;
+        DepthCompositor depth_compositor_;
+        bool mesh_rendered_this_frame_ = false;
+
+        ManagedShader quad_shader_;
+
+        // Cache the last uploaded frame payload to avoid redundant CUDA->GL uploads
+        // when presenting the exact same render result repeatedly (idle cached frames).
+        std::shared_ptr<const Tensor> last_presented_image_;
+        std::shared_ptr<const Tensor> last_presented_depth_;
+        unsigned int last_presented_external_depth_texture_ = 0;
+        bool last_presented_depth_is_ndc_ = false;
+        float last_presented_near_plane_ = 0.0f;
+        float last_presented_far_plane_ = 0.0f;
+        bool last_presented_orthographic_ = false;
+        bool has_present_upload_cache_ = false;
+    };
+
+} // namespace lfs::rendering

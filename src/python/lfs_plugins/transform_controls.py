@@ -1,0 +1,615 @@
+# SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Transform panel for editing node transforms - RmlUI panel."""
+
+import math
+import time
+from typing import List
+
+import lichtfeld as lf
+
+from .types import Panel
+
+TRANSLATE_STEP = 0.01
+TRANSLATE_STEP_FAST = 0.1
+ROTATE_STEP = 1.0
+ROTATE_STEP_FAST = 15.0
+SCALE_STEP = 0.01
+SCALE_STEP_FAST = 0.1
+MIN_SCALE = 0.001
+QUAT_EQUIV_EPSILON = 1e-4
+
+STEP_REPEAT_DELAY = 0.4
+STEP_REPEAT_INTERVAL = 0.05
+
+_STEP_CONFIG = {
+    "pos_x": (TRANSLATE_STEP, TRANSLATE_STEP_FAST),
+    "pos_y": (TRANSLATE_STEP, TRANSLATE_STEP_FAST),
+    "pos_z": (TRANSLATE_STEP, TRANSLATE_STEP_FAST),
+    "rot_x": (ROTATE_STEP, ROTATE_STEP_FAST),
+    "rot_y": (ROTATE_STEP, ROTATE_STEP_FAST),
+    "rot_z": (ROTATE_STEP, ROTATE_STEP_FAST),
+    "scale_u": (SCALE_STEP, SCALE_STEP_FAST),
+    "scale_x": (SCALE_STEP, SCALE_STEP_FAST),
+    "scale_y": (SCALE_STEP, SCALE_STEP_FAST),
+    "scale_z": (SCALE_STEP, SCALE_STEP_FAST),
+}
+
+_AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
+
+
+def _quat_dot(a: List[float], b: List[float]) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+
+
+def _same_rotation(a: List[float], b: List[float]) -> bool:
+    dot = _quat_dot(a, b)
+    return abs(abs(dot) - 1.0) < QUAT_EQUIV_EPSILON
+
+
+class TransformPanelState:
+    def __init__(self):
+        self.editing_active = False
+        self.editing_node_names: List[str] = []
+        self.transforms_before_edit: List[List[float]] = []
+
+        self.euler_display = [0.0, 0.0, 0.0]
+        self.euler_display_node = ""
+        self.euler_display_rotation = [0.0, 0.0, 0.0, 1.0]
+
+        self.multi_editing_active = False
+        self.multi_node_names: List[str] = []
+        self.multi_transforms_before: List[List[float]] = []
+        self.pivot_world = [0.0, 0.0, 0.0]
+        self.display_translation = [0.0, 0.0, 0.0]
+        self.display_euler = [0.0, 0.0, 0.0]
+        self.display_scale = [1.0, 1.0, 1.0]
+
+    def reset_single_edit(self):
+        self.editing_active = False
+        self.editing_node_names = []
+        self.transforms_before_edit = []
+
+    def reset_multi_edit(self):
+        self.multi_editing_active = False
+        self.multi_node_names = []
+        self.multi_transforms_before = []
+
+
+class TransformControlsPanel(Panel):
+    id = "lfs.transform_controls"
+    label = "Transform"
+    space = lf.ui.PanelSpace.MAIN_PANEL_TAB
+    order = 120
+    template = "rmlui/transform_controls.rml"
+    height_mode = lf.ui.PanelHeightMode.CONTENT
+    update_interval_ms = 16
+
+    def __init__(self):
+        self._state = TransformPanelState()
+        self._handle = None
+        self._doc = None
+        self._visible = False
+        self._active_tool = ""
+        self._selected = []
+        self._collapsed = True
+
+        self._trans = [0.0, 0.0, 0.0]
+        self._euler = [0.0, 0.0, 0.0]
+        self._scale = [1.0, 1.0, 1.0]
+
+        self._step_repeat_prop = None
+        self._step_repeat_dir = 0
+        self._step_repeat_start = 0.0
+        self._step_repeat_last = 0.0
+
+        self._focus_active = False
+
+    @classmethod
+    def poll(cls, context):
+        del context
+        active_tool = lf.ui.get_active_tool()
+        if active_tool not in ("builtin.translate", "builtin.rotate", "builtin.scale"):
+            return False
+        selected = lf.get_selected_node_names() or []
+        return len(selected) > 0
+
+    def on_bind_model(self, ctx):
+        model = ctx.create_data_model("transform_controls")
+        if model is None:
+            return
+
+        model.bind_func("tool_label", lambda: self._tool_label())
+        model.bind_func("node_name", lambda: f"Node: {self._selected[0]}" if self._selected else "")
+        model.bind_func("multi_label", lambda: f"{len(self._selected)} nodes selected" if self._selected else "")
+        model.bind_func("reset_label", lambda: "Reset All" if len(self._selected) > 1 else "Reset Transform")
+        model.bind_func("is_single", lambda: len(self._selected) == 1)
+        model.bind_func("is_multi", lambda: len(self._selected) > 1)
+        model.bind_func("show_translate", lambda: self._active_tool == "builtin.translate")
+        model.bind_func("show_rotate", lambda: self._active_tool == "builtin.rotate")
+        model.bind_func("show_scale", lambda: self._active_tool == "builtin.scale")
+
+        for axis in ("x", "y", "z"):
+            idx = _AXIS_INDEX[axis]
+            model.bind(f"pos_{axis}_str",
+                       lambda i=idx: f"{self._trans[i]:.3f}",
+                       lambda v, i=idx: self._set_value("pos", i, v))
+            model.bind(f"rot_{axis}_str",
+                       lambda i=idx: f"{self._euler[i]:.1f}",
+                       lambda v, i=idx: self._set_value("rot", i, v))
+            model.bind(f"scale_{axis}_str",
+                       lambda i=idx: f"{self._scale[i]:.3f}",
+                       lambda v, i=idx: self._set_value("scale", i, v))
+
+        model.bind(f"scale_u_str",
+                   lambda: f"{sum(self._scale) / 3.0:.3f}",
+                   lambda v: self._set_uniform_scale(v))
+
+        model.bind_event("num_step", self._on_num_step)
+        model.bind_event("action", self._on_action)
+
+        self._handle = model.get_handle()
+
+    def on_mount(self, doc):
+        self._doc = doc
+
+        header = doc.get_element_by_id("hdr-transform")
+        if header:
+            header.add_event_listener("click", self._on_toggle_header)
+            section = doc.get_element_by_id("transform-section")
+            arrow = doc.get_element_by_id("arrow-transform")
+            if section:
+                from . import rml_widgets as w
+                w.sync_section_state(section, not self._collapsed, header, arrow)
+
+        body = doc.get_element_by_id("body")
+        if body:
+            body.add_event_listener("mouseup", self._on_step_mouseup)
+
+        for input_id in ("pos-x", "pos-y", "pos-z",
+                         "rot-x", "rot-y", "rot-z",
+                         "scale-u", "scale-x", "scale-y", "scale-z"):
+            el = doc.get_element_by_id(input_id)
+            if el:
+                el.add_event_listener("focus", self._on_input_focus)
+                el.add_event_listener("blur", self._on_input_blur)
+
+    def on_update(self, doc):
+        dirty = False
+        self._active_tool = lf.ui.get_active_tool()
+        self._selected = lf.get_selected_node_names() or []
+
+        visible = (self._active_tool in ("builtin.translate", "builtin.rotate", "builtin.scale")
+                   and len(self._selected) > 0)
+
+        if visible != self._visible:
+            self._visible = visible
+            wrap = doc.get_element_by_id("transform-wrap")
+            if wrap:
+                wrap.set_class("hidden", not visible)
+            dirty = True
+
+        if not visible:
+            if self._state.editing_active:
+                self._commit_single_edit()
+            if self._state.multi_editing_active:
+                self._commit_multi_edit()
+            return dirty
+
+        if len(self._selected) == 1:
+            self._update_single_node()
+        else:
+            self._update_multi_selection()
+
+        self._process_step_repeat()
+        self._dirty_all()
+        return True
+
+    def _tool_label(self):
+        labels = {
+            "builtin.translate": "Translate",
+            "builtin.rotate": "Rotate",
+            "builtin.scale": "Scale"
+        }
+        return labels.get(self._active_tool, "Transform")
+
+    def _update_single_node(self):
+        node_name = self._selected[0]
+        transform = lf.get_node_transform(node_name)
+        if transform is None:
+            return
+
+        if self._state.multi_editing_active:
+            self._commit_multi_edit()
+
+        decomp = lf.decompose_transform(transform)
+        self._trans = list(decomp["translation"])
+        quat = decomp["rotation_quat"]
+        self._scale = list(decomp["scale"])
+
+        selection_changed = node_name != self._state.euler_display_node
+        external_change = not _same_rotation(quat, self._state.euler_display_rotation)
+        if selection_changed or external_change:
+            self._state.euler_display = list(decomp["rotation_euler_deg"])
+            self._state.euler_display_node = node_name
+            self._state.euler_display_rotation = quat.copy()
+
+        self._euler = self._state.euler_display
+
+    def _update_multi_selection(self):
+        world_center = lf.get_selection_world_center()
+        if world_center is None:
+            return
+
+        if self._state.editing_active:
+            self._commit_single_edit()
+
+        current_center = list(world_center)
+
+        selection_changed = (self._state.multi_editing_active and
+                            set(self._state.multi_node_names) != set(self._selected))
+        if selection_changed:
+            self._commit_multi_edit()
+            self._state.reset_multi_edit()
+
+        if not self._state.multi_editing_active:
+            self._trans = current_center.copy()
+            self._euler = [0.0, 0.0, 0.0]
+            self._scale = [1.0, 1.0, 1.0]
+            self._state.display_translation = current_center.copy()
+            self._state.display_euler = [0.0, 0.0, 0.0]
+            self._state.display_scale = [1.0, 1.0, 1.0]
+        else:
+            self._trans = self._state.display_translation
+            self._euler = self._state.display_euler
+            self._scale = self._state.display_scale
+
+    def _dirty_all(self):
+        if not self._handle:
+            return
+        for axis in ("x", "y", "z"):
+            self._handle.dirty(f"pos_{axis}_str")
+            self._handle.dirty(f"rot_{axis}_str")
+            self._handle.dirty(f"scale_{axis}_str")
+        self._handle.dirty("scale_u_str")
+        self._handle.dirty("tool_label")
+        self._handle.dirty("node_name")
+        self._handle.dirty("multi_label")
+        self._handle.dirty("reset_label")
+        self._handle.dirty("is_single")
+        self._handle.dirty("is_multi")
+        self._handle.dirty("show_translate")
+        self._handle.dirty("show_rotate")
+        self._handle.dirty("show_scale")
+
+    def _begin_edit(self):
+        if len(self._selected) == 1:
+            node_name = self._selected[0]
+            transform = lf.get_node_transform(node_name)
+            if transform is None:
+                return
+            self._state.editing_active = True
+            self._state.editing_node_names = [node_name]
+            self._state.transforms_before_edit = [transform]
+        else:
+            if self._state.multi_editing_active:
+                return
+            self._state.multi_editing_active = True
+            center = lf.get_selection_world_center()
+            self._state.pivot_world = list(center) if center else [0.0, 0.0, 0.0]
+            self._state.multi_node_names = list(self._selected)
+            self._state.multi_transforms_before = []
+            for name in self._selected:
+                t = lf.get_node_transform(name)
+                if t is not None:
+                    self._state.multi_transforms_before.append(t)
+
+    def _set_value(self, group, idx, value_str):
+        try:
+            val = float(value_str)
+        except ValueError:
+            return
+
+        if not self._state.editing_active and not self._state.multi_editing_active:
+            self._begin_edit()
+
+        if group == "pos":
+            self._trans[idx] = val
+        elif group == "rot":
+            self._euler[idx] = val
+        elif group == "scale":
+            val = max(val, MIN_SCALE)
+            self._scale[idx] = val
+
+        if len(self._selected) == 1:
+            self._state.display_translation = self._trans
+            self._state.display_euler = self._euler
+            self._state.display_scale = self._scale
+            self._apply_single_transform()
+        else:
+            self._state.display_translation = self._trans
+            self._state.display_euler = self._euler
+            self._state.display_scale = self._scale
+            self._apply_multi_transform(self._active_tool)
+
+    def _set_uniform_scale(self, value_str):
+        try:
+            val = max(float(value_str), MIN_SCALE)
+        except ValueError:
+            return
+
+        if not self._state.editing_active and not self._state.multi_editing_active:
+            self._begin_edit()
+
+        self._scale = [val, val, val]
+
+        if len(self._selected) == 1:
+            self._state.display_scale = self._scale
+            self._apply_single_transform()
+        else:
+            self._state.display_scale = self._scale
+            self._apply_multi_transform(self._active_tool)
+
+    def _apply_single_transform(self):
+        if not self._selected:
+            return
+        node_name = self._selected[0]
+
+        if self._active_tool == "builtin.rotate":
+            euler_to_use = self._euler
+            self._state.euler_display = self._euler.copy()
+        else:
+            decomp_current = lf.decompose_transform(lf.get_node_transform(node_name))
+            euler_to_use = decomp_current["rotation_euler_deg"] if decomp_current else self._euler
+
+        new_transform = lf.compose_transform(self._trans, euler_to_use, self._scale)
+        lf.set_node_transform(node_name, new_transform)
+
+        if self._active_tool == "builtin.rotate":
+            new_decomp = lf.decompose_transform(new_transform)
+            self._state.euler_display_rotation = new_decomp["rotation_quat"].copy()
+
+    def _apply_multi_transform(self, tool: str):
+        if not self._state.multi_node_names:
+            return
+
+        pivot = self._state.pivot_world
+
+        for i, name in enumerate(self._state.multi_node_names):
+            if i >= len(self._state.multi_transforms_before):
+                continue
+
+            original = self._state.multi_transforms_before[i]
+            decomp = lf.decompose_transform(original)
+            pos = list(decomp["translation"])
+
+            if tool == "builtin.translate":
+                delta = [self._state.display_translation[j] - pivot[j] for j in range(3)]
+                new_pos = [pos[j] + delta[j] for j in range(3)]
+                new_transform = lf.compose_transform(new_pos, decomp["rotation_euler_deg"], decomp["scale"])
+                lf.set_node_transform(name, new_transform)
+
+            elif tool == "builtin.rotate":
+                euler_rad = [math.radians(e) for e in self._state.display_euler]
+                cx, cy, cz = math.cos(euler_rad[0]), math.cos(euler_rad[1]), math.cos(euler_rad[2])
+                sx, sy, sz = math.sin(euler_rad[0]), math.sin(euler_rad[1]), math.sin(euler_rad[2])
+                r00, r01, r02 = cy * cz, -cy * sz, sy
+                r10, r11, r12 = sx * sy * cz + cx * sz, -sx * sy * sz + cx * cz, -sx * cy
+                r20, r21, r22 = -cx * sy * cz + sx * sz, cx * sy * sz + sx * cz, cx * cy
+
+                rel = [pos[j] - pivot[j] for j in range(3)]
+                new_rel = [
+                    r00 * rel[0] + r01 * rel[1] + r02 * rel[2],
+                    r10 * rel[0] + r11 * rel[1] + r12 * rel[2],
+                    r20 * rel[0] + r21 * rel[1] + r22 * rel[2]
+                ]
+                new_pos = [pivot[j] + new_rel[j] for j in range(3)]
+                orig_euler = list(decomp["rotation_euler_deg"])
+                new_euler = [orig_euler[j] + self._state.display_euler[j] for j in range(3)]
+                new_transform = lf.compose_transform(new_pos, new_euler, decomp["scale"])
+                lf.set_node_transform(name, new_transform)
+
+            elif tool == "builtin.scale":
+                rel = [pos[j] - pivot[j] for j in range(3)]
+                new_rel = [rel[j] * self._state.display_scale[j] for j in range(3)]
+                new_pos = [pivot[j] + new_rel[j] for j in range(3)]
+                orig_scale = list(decomp["scale"])
+                new_scale = [orig_scale[j] * self._state.display_scale[j] for j in range(3)]
+                new_transform = lf.compose_transform(new_pos, decomp["rotation_euler_deg"], new_scale)
+                lf.set_node_transform(name, new_transform)
+
+    def _on_num_step(self, handle, event, args):
+        if len(args) < 2:
+            return
+        prop = str(args[0])
+        direction = int(args[1])
+        self._apply_step(prop, direction)
+        now = time.monotonic()
+        self._step_repeat_prop = prop
+        self._step_repeat_dir = direction
+        self._step_repeat_start = now
+        self._step_repeat_last = now
+
+    def _on_step_mouseup(self, event):
+        if self._step_repeat_prop:
+            self._step_repeat_prop = None
+
+    def _process_step_repeat(self):
+        if not self._step_repeat_prop:
+            return
+        now = time.monotonic()
+        elapsed = now - self._step_repeat_start
+        if elapsed < STEP_REPEAT_DELAY:
+            return
+        if now - self._step_repeat_last >= STEP_REPEAT_INTERVAL:
+            self._apply_step(self._step_repeat_prop, self._step_repeat_dir)
+            self._step_repeat_last = now
+
+    def _apply_step(self, prop, direction):
+        cfg = _STEP_CONFIG.get(prop)
+        if not cfg:
+            return
+
+        step, step_fast = cfg
+        ctrl = lf.ui.is_ctrl_down()
+        step_val = step_fast if ctrl else step
+
+        if not self._state.editing_active and not self._state.multi_editing_active:
+            self._begin_edit()
+
+        parts = prop.split("_")
+        group = parts[0]
+        axis = parts[1]
+
+        if group == "pos":
+            idx = _AXIS_INDEX.get(axis, -1)
+            if idx >= 0:
+                self._trans[idx] += step_val * direction
+        elif group == "rot":
+            idx = _AXIS_INDEX.get(axis, -1)
+            if idx >= 0:
+                self._euler[idx] += step_val * direction
+        elif group == "scale":
+            if axis == "u":
+                uniform = sum(self._scale) / 3.0 + step_val * direction
+                uniform = max(uniform, MIN_SCALE)
+                self._scale = [uniform, uniform, uniform]
+            else:
+                idx = _AXIS_INDEX.get(axis, -1)
+                if idx >= 0:
+                    self._scale[idx] = max(self._scale[idx] + step_val * direction, MIN_SCALE)
+
+        if len(self._selected) == 1:
+            self._state.display_translation = self._trans
+            self._state.display_euler = self._euler
+            self._state.display_scale = self._scale
+            self._apply_single_transform()
+        else:
+            self._state.display_translation = self._trans
+            self._state.display_euler = self._euler
+            self._state.display_scale = self._scale
+            self._apply_multi_transform(self._active_tool)
+
+    def _on_action(self, handle, event, args):
+        if not args:
+            return
+        action = str(args[0])
+        if action == "reset":
+            if len(self._selected) == 1:
+                self._reset_single_transform()
+            else:
+                self._reset_multi_transforms()
+
+    def _on_toggle_header(self, event):
+        self._collapsed = not self._collapsed
+        header = self._doc.get_element_by_id("hdr-transform")
+        section = self._doc.get_element_by_id("transform-section")
+        arrow = self._doc.get_element_by_id("arrow-transform")
+        if section:
+            from . import rml_widgets as w
+            w.animate_section_toggle(section, not self._collapsed, arrow, header_element=header)
+
+    def _on_input_focus(self, event):
+        if self._focus_active:
+            return
+        self._focus_active = True
+        self._begin_edit()
+
+    def _on_input_blur(self, event):
+        if not self._focus_active:
+            return
+        self._focus_active = False
+        if self._state.editing_active:
+            self._commit_single_edit()
+        elif self._state.multi_editing_active:
+            self._commit_multi_edit()
+
+    def _commit_single_edit(self):
+        if not self._state.editing_node_names or not self._state.transforms_before_edit:
+            self._state.reset_single_edit()
+            return
+
+        node_name = self._state.editing_node_names[0]
+        current = lf.get_node_transform(node_name)
+        if current is None:
+            self._state.reset_single_edit()
+            return
+
+        old = self._state.transforms_before_edit[0]
+        if old != current:
+            lf.ops.invoke("transform.apply_batch",
+                          node_names=[node_name],
+                          old_transforms=[old])
+
+        self._state.reset_single_edit()
+
+    def _commit_multi_edit(self):
+        if not self._state.multi_node_names or not self._state.multi_transforms_before:
+            self._state.reset_multi_edit()
+            return
+
+        any_changed = False
+        for i, name in enumerate(self._state.multi_node_names):
+            if i >= len(self._state.multi_transforms_before):
+                continue
+            current = lf.get_node_transform(name)
+            if current is not None and current != self._state.multi_transforms_before[i]:
+                any_changed = True
+                break
+
+        if any_changed:
+            lf.ops.invoke("transform.apply_batch",
+                          node_names=self._state.multi_node_names,
+                          old_transforms=self._state.multi_transforms_before)
+
+        self._state.reset_multi_edit()
+
+    def _reset_single_transform(self):
+        if not self._selected:
+            return
+        node_name = self._selected[0]
+        current = lf.get_node_transform(node_name)
+        if current is None:
+            return
+
+        identity = lf.compose_transform([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        lf.set_node_transform(node_name, identity)
+        lf.ops.invoke("transform.apply_batch",
+                      node_names=[node_name],
+                      old_transforms=[current])
+        self._state.euler_display = [0.0, 0.0, 0.0]
+        self._state.euler_display_rotation = [0.0, 0.0, 0.0, 1.0]
+
+    def _reset_multi_transforms(self):
+        if self._state.multi_editing_active:
+            self._commit_multi_edit()
+
+        selected = lf.get_selected_node_names()
+        if not selected:
+            return
+
+        old_transforms = []
+        for name in selected:
+            t = lf.get_node_transform(name)
+            if t is not None:
+                old_transforms.append(t)
+
+        if len(old_transforms) != len(selected):
+            return
+
+        identity = lf.compose_transform([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        for name in selected:
+            lf.set_node_transform(name, identity)
+
+        lf.ops.invoke("transform.apply_batch",
+                      node_names=selected,
+                      old_transforms=old_transforms)
+
+
+def register():
+    lf.register_class(TransformControlsPanel)
+    lf.ui.set_panel_parent("lfs.transform_controls", "lfs.rendering")
+
+
+def unregister():
+    lf.ui.set_panel_enabled("lfs.transform_controls", False)

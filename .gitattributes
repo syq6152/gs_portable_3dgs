@@ -1,0 +1,9 @@
+src/python/stubs/**/*.pyi text eol=lf
+# Frozen preset hashes are byte-sensitive on Windows as well as Unix.
+resources/scan_presets/*.json text eol=lf
+resources/registered_presets/*.json text eol=lf
+docs/swaptexture_m4/*.json text eol=lf
+# Preserve copied machine-readable evidence bytes and hashes across checkouts.
+docs/swaptexture_m3/*.json text eol=lf
+# Runtime manifests hash NCNN parameter bytes; CRLF checkout changes the model contract.
+third_party/runtime/SuperResolution/models/*.param text eol=lf

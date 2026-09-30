@@ -1,0 +1,307 @@
+{
+  "schema_version": 1,
+  "license_status": "unresolved",
+  "usage": "Local development approved by user; release notices pending",
+  "components": [
+    {
+      "schema_name": "lfs.swaptexture.runtime-manifest",
+      "schema_version": 1,
+      "producer_version": "m0.1",
+      "document_status": "incomplete",
+      "recorded_on": "2026-09-17",
+      "source_baselines": {
+        "lichtfeld_commit": "e8ee38d4",
+        "swaptexture_commit": "9180f87aabde0bdf8d0957006e53bdb42528c52d"
+      },
+      "component": "colmap",
+      "source_subdirectory": "colmap-cuda-cli",
+      "entrypoint": "bin/sfm.exe",
+      "entrypoint_sha256": "a07eb3f314996d59031ff4656562ca2ca7a5702d3da29c8499c3ccc7820c4252",
+      "implementation_family": "COLMAP",
+      "reported_version": "COLMAP 4.0.4 (commit 9c23f694, 2026-04-27, CUDA)",
+      "version_evidence": "bin/sfm.exe --help self-report",
+      "embedded_version_evidence": "PE files have no embedded FileVersion/ProductVersion",
+      "license_status": "unresolved",
+      "license_evidence": [],
+      "file_count": 46,
+      "total_bytes": 67641603,
+      "files": [
+        {
+          "path": "bin/amd.dll",
+          "byte_size": 35840,
+          "sha256": "da993fdaa3385555e32a7ae9fb157085e49db4939abbbfd333362e1d0a1b4a50"
+        },
+        {
+          "path": "bin/boost_program_options-vc143-mt-x64-1_90.dll",
+          "byte_size": 363520,
+          "sha256": "526cbb37acd9a0a9017f00bfa57c5d87e132131043daadbe37fcd45a093cff56"
+        },
+        {
+          "path": "bin/bz2.dll",
+          "byte_size": 76800,
+          "sha256": "ba28b5a67512390dda8423fcc1c73f29e49161807114aa9b61165d1ca4ebf026"
+        },
+        {
+          "path": "bin/camd.dll",
+          "byte_size": 38912,
+          "sha256": "b3bc12403b73a1c0029550a914a9969998a86d60353fe4b7e6891c6cea6fce76"
+        },
+        {
+          "path": "bin/ccolamd.dll",
+          "byte_size": 46080,
+          "sha256": "30c0b58b97602ea615eaba00f62ca8a54a0ad6014b1f0a4eacf885fce87b92a4"
+        },
+        {
+          "path": "bin/ceres.dll",
+          "byte_size": 3067904,
+          "sha256": "09fb06aa4ec23b0f6ffe53bf1a9a0082f7c3d3f0dd23264f808709d41635f4ca"
+        },
+        {
+          "path": "bin/cholmod.dll",
+          "byte_size": 2059264,
+          "sha256": "a29cfd9bcffaccf7013505391d807b0e57d09087862c114ceec86dc636724a22"
+        },
+        {
+          "path": "bin/colamd.dll",
+          "byte_size": 31744,
+          "sha256": "65d20b5eac99b77f58b886e334a5372a5d35b94f9ac3acbbc5d4f8665ac2f0b1"
+        },
+        {
+          "path": "bin/cudart64_12.dll",
+          "byte_size": 573952,
+          "sha256": "9d9b868955149875ac4ef43442aaaa8913d4a7b3e4d6dd60ee871626aa045768"
+        },
+        {
+          "path": "bin/deflate.dll",
+          "byte_size": 84992,
+          "sha256": "ff943a5b6aaa9557ca49b203819d20934401199b77d4eb76ef01cb95927f1e01"
+        },
+        {
+          "path": "bin/double-conversion.dll",
+          "byte_size": 75776,
+          "sha256": "2b405f3d5b0e37a2375cf6bb3ed6b1bac58222043860d9ec48c4ca81a5b3601a"
+        },
+        {
+          "path": "bin/gflags.dll",
+          "byte_size": 133120,
+          "sha256": "05d5f5f91e66e74dbb9780133554c646df2d339767dd62ae977e53e2d53100a0"
+        },
+        {
+          "path": "bin/glew32.dll",
+          "byte_size": 504832,
+          "sha256": "f37e98ab351807ab310c9717825648284a153f88eb4ed7f086629f6c7b7b4a7c"
+        },
+        {
+          "path": "bin/glog.dll",
+          "byte_size": 219136,
+          "sha256": "cf2df7fe3f909176d85044a6b432276c43cf61ab3c40e64de1e40f4a2a1cd1a9"
+        },
+        {
+          "path": "bin/Iex-3_4.dll",
+          "byte_size": 292864,
+          "sha256": "3abc7a5d93c0d70eb4e5dfbcbcbb035952d83ccf7cdfa1324e87d33f248b17f0"
+        },
+        {
+          "path": "bin/IlmThread-3_4.dll",
+          "byte_size": 45568,
+          "sha256": "a16a89a625f10748f2f7576aba48e419ac969c7fa877fa6d9c68f0d0a9dac072"
+        },
+        {
+          "path": "bin/Imath-3_2.dll",
+          "byte_size": 338944,
+          "sha256": "d1060ba05d9d94084937cb776a01c773bd38223a4fe6e6afb688b70607b113a7"
+        },
+        {
+          "path": "bin/jpeg62.dll",
+          "byte_size": 685568,
+          "sha256": "cf79d90f29a5cd6818a8ce698d006c3359ed5dbe19dc93338f8b9fa3f92ae9cb"
+        },
+        {
+          "path": "bin/libexpat.dll",
+          "byte_size": 167424,
+          "sha256": "cc45bf8d34b588260f9ef5fc81820d9f968d82c9b9ebb9639ff1de7e7ebd84f7"
+        },
+        {
+          "path": "bin/libgcc_s_seh-1.dll",
+          "byte_size": 150196,
+          "sha256": "2de4355648441db0230a9aba1a149fc829b094f83c14c37ea3f775356d33d8b1"
+        },
+        {
+          "path": "bin/libgfortran-5.dll",
+          "byte_size": 3769079,
+          "sha256": "780fa163c1f76f75e36171a3da4e80806fd45286fd8bb9eae66cdfcfff5aff4d"
+        },
+        {
+          "path": "bin/liblapack.dll",
+          "byte_size": 8447407,
+          "sha256": "d0f0a41194c133f49611d5ad438b03a9210561c6d6102ce933b9522494f6bf01"
+        },
+        {
+          "path": "bin/liblzma.dll",
+          "byte_size": 188928,
+          "sha256": "4ba7fc9a23cb3674a82dbd7c978d632d1b7e41c415aebf7c17969f61dcc55909"
+        },
+        {
+          "path": "bin/libpng16.dll",
+          "byte_size": 197632,
+          "sha256": "5aef884197f5c26e6a1b6a2cfb3d9e9fb1cc132a55dcefc9ca6ea5f6d5ed5630"
+        },
+        {
+          "path": "bin/libquadmath-0.dll",
+          "byte_size": 398767,
+          "sha256": "01e0d4de6a6d718968a7e86c4b95972ae1dd00ab35fa43988dae56d1c20d9236"
+        },
+        {
+          "path": "bin/libwinpthread-1.dll",
+          "byte_size": 65018,
+          "sha256": "bbbb08e98392ba548f0d9435b69ed79e4a660268f7312b0c684bd11bff774733"
+        },
+        {
+          "path": "bin/md4c.dll",
+          "byte_size": 64512,
+          "sha256": "a232c141a7c1e1c3d5d0e1756dc2ae8a5967fbefe9569bac2e6f979fa682cc71"
+        },
+        {
+          "path": "bin/openblas.dll",
+          "byte_size": 1780736,
+          "sha256": "bd8bb00d97d2bc019498d6cde72be47669c9efa03b4acf155e455e50d05352c6"
+        },
+        {
+          "path": "bin/OpenColorIO_2_5.dll",
+          "byte_size": 4789760,
+          "sha256": "3fa0d4467751ef1ad1b2f89c205a777641cb1a0c398bd2a13e72d8aa57e4be96"
+        },
+        {
+          "path": "bin/OpenEXR-3_4.dll",
+          "byte_size": 849408,
+          "sha256": "d56902ea40ceb3cc12d5a756cf10d807cef8b8fd3eb31767aa3c4752a44db405"
+        },
+        {
+          "path": "bin/OpenEXRCore-3_4.dll",
+          "byte_size": 312320,
+          "sha256": "f386b537ce1d87ca0209fda3016dffa3586f8bea54a88af878f970bd3181d48d"
+        },
+        {
+          "path": "bin/OpenImageIO.dll",
+          "byte_size": 5650944,
+          "sha256": "1d76bb19eb1d05e94bf60fdc2508f0272d18864428770bcc2b45ef6d67ff8427"
+        },
+        {
+          "path": "bin/OpenImageIO_Util.dll",
+          "byte_size": 745984,
+          "sha256": "8b4ee8d3523778ad871623783e4a87dcf252d1a662edd7cfda3788b3eb4ec1e8"
+        },
+        {
+          "path": "bin/openjph.0.26.dll",
+          "byte_size": 341504,
+          "sha256": "713284ab8f12c6dfd084f328f61a4b3777cf87e1c81c971ae589f37ff1c28dde"
+        },
+        {
+          "path": "bin/pcre2-16.dll",
+          "byte_size": 566784,
+          "sha256": "6f79ed201c5f4499d19de8851ce05e43c5bb21da4de60f05aba34cd9f272d453"
+        },
+        {
+          "path": "bin/platforms/qwindows.dll",
+          "byte_size": 930816,
+          "sha256": "71a442c63d286dff1b241a43e4a9d2518a08c9282f863cc4afb9e0d79fbd9b48"
+        },
+        {
+          "path": "bin/Qt6Core.dll",
+          "byte_size": 8957440,
+          "sha256": "e153702f0c4ee7378a2ee2389a9979fae9ea89dcaba1a87af31a58954cc42b46"
+        },
+        {
+          "path": "bin/Qt6Gui.dll",
+          "byte_size": 6725120,
+          "sha256": "78e27184755658d9d1d44bc23d322baa2ef07aafcc71881d0763feacb3498bc6"
+        },
+        {
+          "path": "bin/sfm.exe",
+          "byte_size": 10937344,
+          "sha256": "a07eb3f314996d59031ff4656562ca2ca7a5702d3da29c8499c3ccc7820c4252"
+        },
+        {
+          "path": "bin/spqr.dll",
+          "byte_size": 351232,
+          "sha256": "df0ce55ce88d00df38c71f6ba199efbbd92f2d1545ffc1f4eff1840b6b7ae205"
+        },
+        {
+          "path": "bin/sqlite3.dll",
+          "byte_size": 1083904,
+          "sha256": "6dad932be5f5871fd01d504435ed91bec10ed43bc9076e737cf31b16b4bb123b"
+        },
+        {
+          "path": "bin/suitesparseconfig.dll",
+          "byte_size": 14336,
+          "sha256": "57ec8b33332707d1d31c519cbcc0a2806e65f86e71d1ec9765d33379ecc7e532"
+        },
+        {
+          "path": "bin/tiff.dll",
+          "byte_size": 468992,
+          "sha256": "11b598f8084e982655e88cdb74877283ccb4f583a12b31b2a34c7e76e80b36d4"
+        },
+        {
+          "path": "bin/yaml-cpp.dll",
+          "byte_size": 262144,
+          "sha256": "4e4e88237fc1a8d06a23cb070ee41dbe0c828f14acabcaf097af169a162fca0e"
+        },
+        {
+          "path": "bin/zlib1.dll",
+          "byte_size": 90112,
+          "sha256": "de13fbca6f3c6a5736f28082c705b20691d8845a556c74e65735a9b6f2805d95"
+        },
+        {
+          "path": "bin/zstd.dll",
+          "byte_size": 658944,
+          "sha256": "eefe7dbd463e8cfd724d643d6035c38ed159ed381b1fee715ff024ee86899f52"
+        }
+      ]
+    },
+    {
+      "schema_name": "lfs.swaptexture.runtime-manifest",
+      "schema_version": 1,
+      "producer_version": "m0.1",
+      "document_status": "incomplete",
+      "recorded_on": "2026-09-17",
+      "source_baselines": {
+        "lichtfeld_commit": "e8ee38d4",
+        "swaptexture_commit": "9180f87aabde0bdf8d0957006e53bdb42528c52d"
+      },
+      "component": "super_resolution",
+      "source_subdirectory": "SuperResolution",
+      "entrypoint": "preprocess.exe",
+      "entrypoint_sha256": "e463dd2f4a12626c0081d0489c2d913be8071f9338bdfd506601c2d7cfce1eed",
+      "implementation_family": "realesrgan-ncnn-vulkan",
+      "reported_version": null,
+      "version_evidence": "preprocess.exe -h self-identifies as realesrgan-ncnn-vulkan and lists realesr-general-x4v3-dn000; exact release/commit is not exposed",
+      "embedded_version_evidence": "PE files have no embedded FileVersion/ProductVersion",
+      "license_status": "unresolved",
+      "license_evidence": [],
+      "file_count": 4,
+      "total_bytes": 9052563,
+      "files": [
+        {
+          "path": "models/realesr-general-x4v3-dn000.bin",
+          "byte_size": 2435272,
+          "sha256": "bdd5bdc7da2c83411ced54c37a6646aebfe1b3f780bb7e6f877dd8934fbd3cc5"
+        },
+        {
+          "path": "models/realesr-general-x4v3-dn000.param",
+          "byte_size": 8267,
+          "sha256": "da05a967eb4bed3e678f83c172c79804e14bb9ba0140f642cc61129abf0cbe8a"
+        },
+        {
+          "path": "preprocess.exe",
+          "byte_size": 6415872,
+          "sha256": "e463dd2f4a12626c0081d0489c2d913be8071f9338bdfd506601c2d7cfce1eed"
+        },
+        {
+          "path": "vcomp140.dll",
+          "byte_size": 193152,
+          "sha256": "55aba23cdcd6484fbb06f4155b8ca75adfce7a881f10afd0c49457165e677164"
+        }
+      ]
+    }
+  ]
+}

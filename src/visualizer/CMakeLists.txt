@@ -1,0 +1,421 @@
+# SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Fetch libvterm for terminal emulation
+# include(${CMAKE_SOURCE_DIR}/cmake/FetchLibvterm.cmake)
+
+# SHARED on Windows to avoid singleton duplication across .exe/.pyd boundary
+if(WIN32)
+    set(LFS_VIS_LIB_TYPE SHARED)
+else()
+    set(LFS_VIS_LIB_TYPE STATIC)
+endif()
+
+add_library(lfs_visualizer ${LFS_VIS_LIB_TYPE}
+        # Core
+        visualizer.cpp
+        visualizer_impl.cpp
+        core/main_loop.cpp
+        core/data_loading_service.cpp
+        core/editor_context.cpp
+        core/parameter_manager.cpp
+        core/services.cpp
+
+        # Window management
+        window/window_manager.cpp
+
+        # Rendering
+        rendering/rendering_manager.cpp
+        rendering/render_pass.cpp
+        rendering/framerate_controller.cpp
+        rendering/passes/overlay_pass.cpp
+        rendering/passes/splat_raster_pass.cpp
+        rendering/passes/mesh_pass.cpp
+        rendering/passes/present_pass.cpp
+        rendering/passes/point_cloud_pass.cpp
+        rendering/passes/split_view_pass.cpp
+
+        # Theme system
+        theme/theme.cpp
+
+        # GUI system
+        gui/gui_manager.cpp
+        gui/global_context_menu.cpp
+        gui/gizmo_manager.cpp
+        gui/pie_menu.cpp
+        gui/panel_layout.cpp
+        gui/panel_registry.cpp
+        gui/native_panels.cpp
+        gui/layout_state.cpp
+        gui/async_task_manager.cpp
+        gui/video_export_utils.cpp
+        gui/startup_overlay.cpp
+        gui/rml_menu_bar.cpp
+        gui/rml_right_panel.cpp
+        gui/rml_shell_frame.cpp
+        gui/rml_viewport_overlay.cpp
+        gui/rml_status_bar.cpp
+        gui/gpu_memory_query.cpp
+        gui/gl_line_renderer.cpp
+        gui/rml_overlay_context.cpp
+        gui/film_strip_renderer.cpp
+        gui/sequencer_ui_manager.cpp
+        gui/rml_modal_overlay.cpp
+        gui/rml_sequencer_overlay.cpp
+        gui/keyframe_scene_sync.cpp
+        gui/gizmo_transform.cpp
+        gui/html_viewer_export.cpp
+        gui/ui_widgets.cpp
+        gui_capabilities.cpp
+        gui/panels/windows_console_utils.cpp
+        gui/panels/tools_panel.cpp
+        gui/panels/python_console_panel.cpp
+        gui/panels/python_scripts_panel.cpp
+        gui/editor/python_lsp_client.cpp
+        gui/editor/python_editor.cpp
+        gui/editor/stdio_process.cpp
+
+        # Terminal emulator
+        gui/terminal/pty_process.cpp
+        gui/terminal/terminal_widget.cpp
+        gui/windows/video_extractor_dialog.cpp
+        gui/video_widget_factory.cpp
+
+        # Scene management
+        scene/scene_manager.cpp
+        scene/selection_state.cpp
+
+        # Input handling
+        input/input_controller.cpp
+        input/input_bindings.cpp
+        input/sdl_key_mapping.cpp
+
+        # Training integration
+        training/training_state.cpp
+        training/training_manager.cpp
+
+        # Tools
+        tools/selection_tool.cpp
+        tools/brush_tool.cpp
+        tools/align_tool.cpp
+        tools/unified_tool_registry.cpp
+        tools/builtin_tools.cpp
+
+        # Icon cache
+        gui/icon_cache.cpp
+
+        # Selection system
+        selection/selection_service.cpp
+
+        # Sequencer (camera animation)
+        sequencer/sequencer_controller.cpp
+        sequencer/rml_sequencer_panel.cpp
+
+        # Operator system (Blender-style)
+        operator/operator_context.cpp
+        operator/operator_id.cpp
+        operator/operator_registry.cpp
+        operator/property_schema.cpp
+        operator/ops/align_ops.cpp
+        operator/ops/brush_ops.cpp
+        operator/ops/edit_ops.cpp
+        operator/ops/scene_ops.cpp
+        operator/ops/selection_ops.cpp
+        operator/ops/transform_ops.cpp
+
+        # Compositional operations system
+        operation/undo_entry.cpp
+        operation/undo_history.cpp
+        operation/operation.cpp
+        operation/pipeline.cpp
+        operation/ops/select_ops.cpp
+        operation/ops/edit_ops.cpp
+        operation/ops/transform_ops.cpp
+
+        # Python hook invoker (DLL boundary singleton)
+        ${CMAKE_SOURCE_DIR}/src/python/ui_hooks.cpp
+
+        # View/render bridge for plugin capabilities
+        ipc/view_context.cpp
+
+        gui/panels/menu_bar.cpp
+        gui/panels/menu_bar.hpp
+        gui/utils/native_file_dialog.cpp
+        gui/utils/drag_drop_native.cpp
+        gui/utils/file_association.cpp
+
+        # RmlUI integration
+        gui/rmlui/rmlui_system_interface.cpp
+        gui/rmlui/rml_text_input_handler.cpp
+        gui/rmlui/rmlui_render_interface.cpp
+        gui/rmlui/rmlui_gl3_backend.cpp
+        gui/rmlui/rmlui_manager.cpp
+        gui/rmlui/rml_fbo.cpp
+        gui/rmlui/rml_panel_host.cpp
+        gui/rmlui/rml_theme.cpp
+        gui/rmlui/elements/chromaticity_element.cpp
+        gui/rmlui/elements/color_picker_element.cpp
+        gui/rmlui/elements/crf_curve_element.cpp
+        gui/rmlui/elements/loss_graph_element.cpp
+)
+
+set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/gui/rmlui/rmlui_gl3_backend.cpp
+        PROPERTIES COMPILE_DEFINITIONS "RMLUI_GL3_CUSTOM_LOADER=<glad/glad.h>"
+)
+
+# Set include directories
+target_include_directories(lfs_visualizer
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/external/httplib
+        ${OPENGL_INCLUDE_DIRS}
+)
+
+target_link_libraries(lfs_visualizer
+        PRIVATE
+        lfs_core
+        lfs_video
+        lfs_geometry
+        lfs_io
+        lfs_rendering
+        lfs_training
+        lfs_python_runtime
+        lfs_python_utils
+        lfs_sequencer
+        glad::glad
+        SDL3::SDL3
+        imgui::imgui
+        implot::implot
+        imguizmo::imguizmo
+        Zep::Zep
+        glm::glm
+        TBB::tbb
+        spdlog::spdlog
+        nlohmann_json::nlohmann_json
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        CUDA::cudart
+        nfd::nfd
+        ${OPENGL_LIBRARIES}
+        vterm
+)
+
+# RmlUI: on Linux, lfs_visualizer is STATIC and gets linked into both the
+# exe and the Python .so, which would duplicate librmlui.a globals and cause
+# crashes.  Wrap the static libraries in a small shared library so there is
+# exactly one copy of RmlUI in the process.
+find_package(RmlUi CONFIG REQUIRED)
+
+if(NOT WIN32)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/lfs_rmlui_stub.cpp" "")
+    add_library(lfs_rmlui SHARED "${CMAKE_CURRENT_BINARY_DIR}/lfs_rmlui_stub.cpp")
+
+    find_package(lunasvg CONFIG REQUIRED)
+    target_link_libraries(lfs_rmlui PRIVATE
+        -Wl,--whole-archive
+        $<TARGET_FILE:RmlUi::Core>
+        $<TARGET_FILE:RmlUi::Debugger>
+        -Wl,--no-whole-archive
+        Freetype::Freetype
+        lunasvg::lunasvg
+    )
+
+    get_target_property(_rmlui_includes RmlUi::Core INTERFACE_INCLUDE_DIRECTORIES)
+    if(_rmlui_includes)
+        target_include_directories(lfs_rmlui PUBLIC ${_rmlui_includes})
+    endif()
+    target_compile_definitions(lfs_rmlui PUBLIC RMLUI_STATIC_LIB)
+
+    if(TARGET Freetype::Freetype)
+        get_target_property(_ft_includes Freetype::Freetype INTERFACE_INCLUDE_DIRECTORIES)
+        if(_ft_includes)
+            target_include_directories(lfs_rmlui PUBLIC ${_ft_includes})
+        endif()
+    endif()
+
+    set_target_properties(lfs_rmlui PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+    )
+
+    target_link_libraries(lfs_visualizer PUBLIC lfs_rmlui)
+else()
+    target_link_libraries(lfs_visualizer PUBLIC RmlUi::RmlUi)
+endif()
+
+# Set C++ standard
+target_compile_features(lfs_visualizer PUBLIC cxx_std_23)
+
+if(WIN32)
+    set_target_properties(lfs_visualizer PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}
+    )
+endif()
+
+# Compiler options
+target_compile_options(lfs_visualizer PRIVATE
+        $<$<CXX_COMPILER_FRONTEND_VARIANT:GNU>:-Wall -Wextra -Wpedantic>
+        $<$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>:/W4>
+        $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:GNU,Clang>>:-O0 -g>
+        $<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:GNU,Clang>>:-O3>
+)
+
+# Handle resources (shaders and assets)
+set(VISUALIZER_BUILD_RESOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/resources")
+set(VISUALIZER_SOURCE_RESOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources")
+
+# Create resource directories in build folder
+file(MAKE_DIRECTORY "${VISUALIZER_BUILD_RESOURCE_DIR}/shaders")
+file(MAKE_DIRECTORY "${VISUALIZER_BUILD_RESOURCE_DIR}/assets")
+
+# Copy shaders to build directory
+file(GLOB SHADER_FILES CONFIGURE_DEPENDS "${VISUALIZER_SOURCE_RESOURCE_DIR}/shaders/*")
+foreach (SHADER_FILE ${SHADER_FILES})
+    get_filename_component(SHADER_NAME ${SHADER_FILE} NAME)
+    configure_file(${SHADER_FILE} "${VISUALIZER_BUILD_RESOURCE_DIR}/shaders/${SHADER_NAME}" COPYONLY)
+endforeach ()
+
+# Copy assets from resources/assets if they exist
+file(GLOB ASSET_FILES CONFIGURE_DEPENDS "${VISUALIZER_SOURCE_RESOURCE_DIR}/assets/*")
+foreach (ASSET_FILE ${ASSET_FILES})
+    get_filename_component(ASSET_NAME ${ASSET_FILE} NAME)
+    configure_file(${ASSET_FILE} "${VISUALIZER_BUILD_RESOURCE_DIR}/assets/${ASSET_NAME}" COPYONLY)
+endforeach ()
+
+set(GUI_ASSET_FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/gui/assets/JetBrainsMono-Regular.ttf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/gui/assets/lichtfeld-icon.png"
+)
+
+foreach (GUI_ASSET_FILE ${GUI_ASSET_FILES})
+    if (EXISTS ${GUI_ASSET_FILE} AND NOT IS_DIRECTORY ${GUI_ASSET_FILE})
+        get_filename_component(ASSET_NAME ${GUI_ASSET_FILE} NAME)
+        configure_file(${GUI_ASSET_FILE} "${VISUALIZER_BUILD_RESOURCE_DIR}/assets/${ASSET_NAME}" COPYONLY)
+    endif ()
+endforeach ()
+
+# Copy icon files
+file(MAKE_DIRECTORY "${VISUALIZER_BUILD_RESOURCE_DIR}/assets/icon")
+file(GLOB ICON_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/gui/assets/icon/*.png")
+foreach (ICON_FILE ${ICON_FILES})
+    get_filename_component(ICON_NAME ${ICON_FILE} NAME)
+    configure_file(${ICON_FILE} "${VISUALIZER_BUILD_RESOURCE_DIR}/assets/icon/${ICON_NAME}" COPYONLY)
+endforeach ()
+
+# Copy scene icon files (used by RmlUI scene panel)
+file(MAKE_DIRECTORY "${VISUALIZER_BUILD_RESOURCE_DIR}/assets/icon/scene")
+file(GLOB SCENE_ICON_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/gui/assets/icon/scene/*.png")
+foreach (ICON_FILE ${SCENE_ICON_FILES})
+    get_filename_component(ICON_NAME ${ICON_FILE} NAME)
+    configure_file(${ICON_FILE} "${VISUALIZER_BUILD_RESOURCE_DIR}/assets/icon/scene/${ICON_NAME}" COPYONLY)
+endforeach ()
+
+# Copy sequencer icon files (used by RmlUI sequencer panel)
+file(MAKE_DIRECTORY "${VISUALIZER_BUILD_RESOURCE_DIR}/assets/icon/sequencer")
+file(GLOB SEQUENCER_ICON_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/gui/assets/icon/sequencer/*.png")
+foreach (ICON_FILE ${SEQUENCER_ICON_FILES})
+    get_filename_component(ICON_NAME ${ICON_FILE} NAME)
+    configure_file(${ICON_FILE} "${VISUALIZER_BUILD_RESOURCE_DIR}/assets/icon/sequencer/${ICON_NAME}" COPYONLY)
+endforeach ()
+
+# Copy RmlUI resources (re-copy on every build so edits are picked up)
+file(MAKE_DIRECTORY "${VISUALIZER_BUILD_RESOURCE_DIR}/assets/rmlui")
+file(GLOB RMLUI_RESOURCE_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/gui/rmlui/resources/*")
+foreach (RMLUI_FILE ${RMLUI_RESOURCE_FILES})
+    get_filename_component(RMLUI_NAME ${RMLUI_FILE} NAME)
+    configure_file(${RMLUI_FILE} "${VISUALIZER_BUILD_RESOURCE_DIR}/assets/rmlui/${RMLUI_NAME}" COPYONLY)
+endforeach ()
+add_custom_target(copy_rmlui_resources ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${RMLUI_RESOURCE_FILES}
+        "${VISUALIZER_BUILD_RESOURCE_DIR}/assets/rmlui/"
+    COMMENT "Syncing RmlUI resources"
+)
+add_dependencies(lfs_visualizer copy_rmlui_resources)
+
+# Copy locale files
+file(MAKE_DIRECTORY "${VISUALIZER_BUILD_RESOURCE_DIR}/locales")
+file(GLOB LOCALE_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/gui/resources/locales/*.json")
+foreach (LOCALE_FILE ${LOCALE_FILES})
+    get_filename_component(LOCALE_NAME ${LOCALE_FILE} NAME)
+    configure_file(${LOCALE_FILE} "${VISUALIZER_BUILD_RESOURCE_DIR}/locales/${LOCALE_NAME}" COPYONLY)
+endforeach ()
+
+# Compile definitions
+target_compile_definitions(lfs_visualizer PRIVATE
+        LFS_VIS_EXPORTS
+        $<$<BOOL:${CUDA_GL_INTEROP_ENABLED}>:CUDA_GL_INTEROP_ENABLED>
+        PROJECT_ROOT_PATH="${PROJECT_SOURCE_DIR}"
+        VISUALIZER_SHADER_PATH="${VISUALIZER_BUILD_RESOURCE_DIR}/shaders"
+        VISUALIZER_ASSET_PATH="${VISUALIZER_BUILD_RESOURCE_DIR}/assets"
+        VISUALIZER_LOCALE_PATH="${VISUALIZER_BUILD_RESOURCE_DIR}/locales"
+        VISUALIZER_SOURCE_SHADER_PATH="${VISUALIZER_SOURCE_RESOURCE_DIR}/shaders"
+        VISUALIZER_SOURCE_ASSET_PATH="${VISUALIZER_SOURCE_RESOURCE_DIR}/assets"
+        $<$<CONFIG:Debug>:DEBUG_BUILD>
+        $<$<CONFIG:Release>:RELEASE_BUILD>
+)
+
+# Platform-specific settings
+if (WIN32)
+    target_compile_definitions(lfs_visualizer PRIVATE
+            NOMINMAX
+            _USE_MATH_DEFINES
+    )
+    target_link_libraries(lfs_visualizer PRIVATE
+            Ole32       # OLE drag-drop (IDropTarget)
+            Shell32     # SHChangeNotify (file association)
+            dxgi        # DXGI per-process VRAM query
+    )
+elseif (UNIX AND NOT APPLE)
+    target_link_libraries(lfs_visualizer PRIVATE
+            GL
+            GLU
+            X11
+            util  # PTY support (forkpty)
+    )
+endif ()
+
+if(NOT BUILD_PORTABLE)
+    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/visualizer/visualizer.hpp
+            DESTINATION include/visualizer)
+endif()
+
+# Optionally install resources
+install(DIRECTORY ${VISUALIZER_SOURCE_RESOURCE_DIR}/
+        DESTINATION share/LichtFeld-Studio/visualizer/resources
+        FILES_MATCHING
+        PATTERN "*.vert"
+        PATTERN "*.frag"
+        PATTERN "*.ttf"
+)
+
+# Install locale files
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/gui/resources/locales/
+        DESTINATION share/LichtFeld-Studio/locales
+        FILES_MATCHING
+        PATTERN "*.json"
+)
+
+# Add custom target for resource files (makes them show up in IDEs)
+file(GLOB_RECURSE VISUALIZER_RESOURCE_FILES
+        "${VISUALIZER_SOURCE_RESOURCE_DIR}/shaders/*.vert"
+        "${VISUALIZER_SOURCE_RESOURCE_DIR}/shaders/*.frag"
+        "${VISUALIZER_SOURCE_RESOURCE_DIR}/assets/*.ttf"
+)
+if (VISUALIZER_RESOURCE_FILES)
+    add_custom_target(visualizer_resources SOURCES ${VISUALIZER_RESOURCE_FILES})
+endif ()

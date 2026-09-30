@@ -1,0 +1,985 @@
+/* SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+#pragma once
+
+// Localization string keys for type-safe access via LOC(Strings::X::Y)
+
+namespace lichtfeld::Strings {
+
+    namespace Menu {
+        namespace File {
+            inline constexpr const char* MENU = "menu.file";
+            inline constexpr const char* NEW_PROJECT = "menu.file.new_project";
+            inline constexpr const char* IMPORT_DATASET = "menu.file.import_dataset";
+            inline constexpr const char* IMPORT_PLY = "menu.file.import_ply";
+            inline constexpr const char* IMPORT_CHECKPOINT = "menu.file.import_checkpoint";
+            inline constexpr const char* IMPORT_CONFIG = "menu.file.import_config";
+            inline constexpr const char* EXPORT = "menu.file.export";
+            inline constexpr const char* EXPORT_CONFIG = "menu.file.export_config";
+            inline constexpr const char* EXTRACT_VIDEO_FRAMES = "menu.file.extract_video_frames";
+            inline constexpr const char* MESH_TO_SPLAT = "menu.file.mesh_to_splat";
+            inline constexpr const char* EXIT = "menu.file.exit";
+        } // namespace File
+
+        namespace Edit {
+            inline constexpr const char* MENU = "menu.edit";
+            inline constexpr const char* INPUT_SETTINGS = "menu.edit.input_settings";
+            inline constexpr const char* PREFERENCES = "menu.edit.preferences";
+        } // namespace Edit
+
+        namespace Tools {
+            inline constexpr const char* MENU = "menu.tools";
+            inline constexpr const char* PYTHON_CONSOLE = "menu.tools.python_console";
+            inline constexpr const char* PLUGIN_MARKETPLACE = "menu.tools.plugin_marketplace";
+        } // namespace Tools
+
+        namespace View {
+            inline constexpr const char* MENU = "menu.view";
+            inline constexpr const char* THEME = "menu.view.theme";
+            inline constexpr const char* THEME_DARK = "menu.view.theme.dark";
+            inline constexpr const char* THEME_LIGHT = "menu.view.theme.light";
+            inline constexpr const char* THEME_GRUVBOX = "menu.view.theme.gruvbox";
+            inline constexpr const char* THEME_CATPPUCCIN_MOCHA = "menu.view.theme.catppuccin_mocha";
+            inline constexpr const char* THEME_CATPPUCCIN_LATTE = "menu.view.theme.catppuccin_latte";
+            inline constexpr const char* THEME_NORD = "menu.view.theme.nord";
+            inline constexpr const char* DEBUG_INFO = "menu.view.debug_info";
+        } // namespace View
+
+        namespace Help {
+            inline constexpr const char* MENU = "menu.help";
+            inline constexpr const char* GETTING_STARTED = "menu.help.getting_started";
+            inline constexpr const char* ABOUT = "menu.help.about";
+        } // namespace Help
+    } // namespace Menu
+
+    namespace Window {
+        inline constexpr const char* GETTING_STARTED = "window.getting_started";
+        inline constexpr const char* ABOUT = "window.about";
+        inline constexpr const char* INPUT_SETTINGS = "window.input_settings";
+        inline constexpr const char* DEBUG_INFO = "window.debug_info";
+        inline constexpr const char* EXPORT = "window.export";
+        inline constexpr const char* SCENE = "window.scene";
+        inline constexpr const char* RENDERING = "window.rendering";
+        inline constexpr const char* TRAINING = "window.training";
+        inline constexpr const char* PREFERENCES = "window.preferences";
+    } // namespace Window
+
+    namespace GettingStarted {
+        inline constexpr const char* TITLE = "getting_started.title";
+        inline constexpr const char* DESCRIPTION = "getting_started.description";
+        inline constexpr const char* WIKI_SECTION = "getting_started.wiki_section";
+        inline constexpr const char* VIDEO_INTRO = "getting_started.video_intro";
+        inline constexpr const char* VIDEO_LATEST = "getting_started.video_latest";
+        inline constexpr const char* VIDEO_REALITY_SCAN = "getting_started.video_reality_scan";
+        inline constexpr const char* VIDEO_COLMAP = "getting_started.video_colmap";
+        inline constexpr const char* VIDEO_LICHTFELD = "getting_started.video_lichtfeld";
+        inline constexpr const char* VIDEO_MASKS = "getting_started.video_masks";
+        inline constexpr const char* LOADING = "getting_started.loading";
+    } // namespace GettingStarted
+
+    namespace About {
+        inline constexpr const char* TITLE = "about.title";
+        inline constexpr const char* DESCRIPTION = "about.description";
+        inline constexpr const char* BUILD_INFO = "about.build_info";
+        inline constexpr const char* LINKS = "about.links";
+        inline constexpr const char* REPOSITORY = "about.repository";
+        inline constexpr const char* WEBSITE = "about.website";
+        inline constexpr const char* AUTHORS = "about.authors";
+        inline constexpr const char* LICENSE = "about.license";
+
+        namespace BuildInfo {
+            inline constexpr const char* VERSION = "about.build_info.version";
+            inline constexpr const char* COMMIT = "about.build_info.commit";
+            inline constexpr const char* BUILD_TYPE = "about.build_info.build_type";
+            inline constexpr const char* PLATFORM = "about.build_info.platform";
+            inline constexpr const char* CUDA_GL_INTEROP = "about.build_info.cuda_gl_interop";
+        } // namespace BuildInfo
+
+        namespace BuildType {
+            inline constexpr const char* DEBUG = "about.build_type.debug";
+            inline constexpr const char* RELEASE = "about.build_type.release";
+        } // namespace BuildType
+
+        namespace Platform {
+            inline constexpr const char* WINDOWS = "about.platform.windows";
+            inline constexpr const char* LINUX = "about.platform.linux";
+            inline constexpr const char* UNKNOWN = "about.platform.unknown";
+        } // namespace Platform
+
+        namespace Interop {
+            inline constexpr const char* ENABLED = "about.interop.enabled";
+            inline constexpr const char* DISABLED = "about.interop.disabled";
+        } // namespace Interop
+    } // namespace About
+
+    namespace Training {
+        namespace Section {
+            inline constexpr const char* DATASET = "training.section.dataset";
+            inline constexpr const char* OPTIMIZATION = "training.section.optimization";
+            inline constexpr const char* REFINEMENT = "training.section.refinement";
+            inline constexpr const char* BILATERAL_GRID = "training.section.bilateral_grid";
+            inline constexpr const char* MASKING = "training.section.masking";
+            inline constexpr const char* LOSSES = "training.section.losses";
+            inline constexpr const char* INITIALIZATION = "training.section.initialization";
+            inline constexpr const char* THRESHOLDS = "training.section.thresholds";
+            inline constexpr const char* SAVE_STEPS = "training.section.save_steps";
+            inline constexpr const char* BASIC_PARAMS = "training.section.basic_params";
+            inline constexpr const char* ADVANCED_PARAMS = "training.section.advanced_params";
+            inline constexpr const char* SPARSITY = "training.section.sparsity";
+            inline constexpr const char* PRUNING_GROWING = "training.section.pruning_growing";
+        } // namespace Section
+
+        namespace Dataset {
+            inline constexpr const char* PATH = "training.dataset.path";
+            inline constexpr const char* IMAGES = "training.dataset.images";
+            inline constexpr const char* RESIZE_FACTOR = "training.dataset.resize_factor";
+            inline constexpr const char* MAX_WIDTH = "training.dataset.max_width";
+            inline constexpr const char* CPU_CACHE = "training.dataset.cpu_cache";
+            inline constexpr const char* FS_CACHE = "training.dataset.fs_cache";
+            inline constexpr const char* OUTPUT = "training.dataset.output";
+        } // namespace Dataset
+
+        namespace Opt {
+            inline constexpr const char* STRATEGY = "training.opt.strategy";
+            inline constexpr const char* LEARNING_RATES = "training.opt.learning_rates";
+            inline constexpr const char* ITERATIONS = "training.opt.iterations";
+            inline constexpr const char* SH_DEGREE = "training.opt.sh_degree";
+            inline constexpr const char* USE_BILATERAL = "training.opt.use_bilateral";
+            inline constexpr const char* MASK_MODE = "training.opt.mask_mode";
+            inline constexpr const char* SPARSITY = "training.opt.sparsity";
+            inline constexpr const char* GUT = "training.opt.gut";
+            inline constexpr const char* UNDISTORT = "training.opt.undistort";
+            inline constexpr const char* MIP_FILTER = "training.opt.mip_filter";
+            inline constexpr const char* BG_MODULATION = "training.opt.bg_modulation";
+            inline constexpr const char* LR_POSITION = "training.opt.lr.position";
+            inline constexpr const char* LR_SH_COEFF = "training.opt.lr.sh_coeff";
+            inline constexpr const char* LR_OPACITY = "training.opt.lr.opacity";
+            inline constexpr const char* LR_SCALING = "training.opt.lr.scaling";
+            inline constexpr const char* LR_ROTATION = "training.opt.lr.rotation";
+        } // namespace Opt
+
+        namespace Refinement {
+            inline constexpr const char* REFINE_EVERY = "training.refinement.refine_every";
+            inline constexpr const char* START_REFINE = "training.refinement.start_refine";
+            inline constexpr const char* STOP_REFINE = "training.refinement.stop_refine";
+            inline constexpr const char* GRADIENT_THR = "training.refinement.gradient_thr";
+            inline constexpr const char* RESET_EVERY = "training.refinement.reset_every";
+            inline constexpr const char* SH_UPGRADE_EVERY = "training.refinement.sh_upgrade_every";
+        } // namespace Refinement
+
+        namespace Mask {
+            inline constexpr const char* INVERT = "training.mask.invert";
+            inline constexpr const char* THRESHOLD = "training.mask.threshold";
+            inline constexpr const char* PENALTY_WEIGHT = "training.mask.penalty_weight";
+            inline constexpr const char* PENALTY_POWER = "training.mask.penalty_power";
+            inline constexpr const char* NO_MASKS = "training.mask.no_masks";
+        } // namespace Mask
+
+        namespace Bilateral {
+            inline constexpr const char* GRID_X = "training.bilateral.grid_x";
+            inline constexpr const char* GRID_Y = "training.bilateral.grid_y";
+            inline constexpr const char* GRID_W = "training.bilateral.grid_w";
+            inline constexpr const char* LEARNING_RATE = "training.bilateral.learning_rate";
+        } // namespace Bilateral
+
+        namespace Masking {
+            inline constexpr const char* INVERT_MASKS = "training.masking.invert_masks";
+            inline constexpr const char* THRESHOLD = "training.masking.threshold";
+            inline constexpr const char* PENALTY_WEIGHT = "training.masking.penalty_weight";
+            inline constexpr const char* PENALTY_POWER = "training.masking.penalty_power";
+        } // namespace Masking
+
+        namespace Losses {
+            inline constexpr const char* LAMBDA_DSSIM = "training.losses.lambda_dssim";
+            inline constexpr const char* OPACITY_REG = "training.losses.opacity_reg";
+            inline constexpr const char* SCALE_REG = "training.losses.scale_reg";
+            inline constexpr const char* TV_LOSS_WEIGHT = "training.losses.tv_loss_weight";
+        } // namespace Losses
+
+        namespace Init {
+            inline constexpr const char* INIT_OPACITY = "training.init.init_opacity";
+            inline constexpr const char* INIT_SCALING = "training.init.init_scaling";
+            inline constexpr const char* RANDOM_INIT = "training.init.random_init";
+            inline constexpr const char* NUM_POINTS = "training.init.num_points";
+            inline constexpr const char* EXTENT = "training.init.extent";
+        } // namespace Init
+
+        namespace Thresholds {
+            inline constexpr const char* MIN_OPACITY = "training.thresholds.min_opacity";
+            inline constexpr const char* PRUNE_OPACITY = "training.thresholds.prune_opacity";
+            inline constexpr const char* GROW_SCALE_3D = "training.thresholds.grow_scale_3d";
+            inline constexpr const char* GROW_SCALE_2D = "training.thresholds.grow_scale_2d";
+            inline constexpr const char* PRUNE_SCALE_3D = "training.thresholds.prune_scale_3d";
+            inline constexpr const char* PRUNE_SCALE_2D = "training.thresholds.prune_scale_2d";
+            inline constexpr const char* PAUSE_AFTER_RESET = "training.thresholds.pause_after_reset";
+            inline constexpr const char* REVISED_OPACITY = "training.thresholds.revised_opacity";
+        } // namespace Thresholds
+
+        namespace Tooltip {
+            inline constexpr const char* INVERT_MASKS = "training.tooltip.invert_masks";
+            inline constexpr const char* PENALTY_WEIGHT = "training.tooltip.penalty_weight";
+            inline constexpr const char* PENALTY_POWER = "training.tooltip.penalty_power";
+            inline constexpr const char* MASK_THRESHOLD = "training.tooltip.mask_threshold";
+            inline constexpr const char* MIP_FILTER = "training.tooltip.mip_filter";
+            inline constexpr const char* KEEP_MODEL = "training.tooltip.keep_model";
+            inline constexpr const char* STRATEGY = "training.tooltip.strategy";
+            inline constexpr const char* ITERATIONS = "training.tooltip.iterations";
+            inline constexpr const char* MAX_GAUSSIANS = "training.tooltip.max_gaussians";
+            inline constexpr const char* SH_DEGREE = "training.tooltip.sh_degree";
+            inline constexpr const char* TILE_MODE = "training.tooltip.tile_mode";
+            inline constexpr const char* STEPS_SCALER = "training.tooltip.steps_scaler";
+            inline constexpr const char* BILATERAL_GRID = "training.tooltip.bilateral_grid";
+            inline constexpr const char* MASK_MODE = "training.tooltip.mask_mode";
+            inline constexpr const char* USE_ALPHA_AS_MASK = "training.tooltip.use_alpha_as_mask";
+            inline constexpr const char* SPARSITY = "training.tooltip.sparsity";
+            inline constexpr const char* GUT = "training.tooltip.gut";
+            inline constexpr const char* UNDISTORT = "training.tooltip.undistort";
+            inline constexpr const char* BG_MODULATION = "training.tooltip.bg_modulation";
+            inline constexpr const char* GRADIENT_THR = "training.tooltip.gradient_thr";
+            inline constexpr const char* OPACITY_REG = "training.tooltip.opacity_reg";
+            inline constexpr const char* SCALE_REG = "training.tooltip.scale_reg";
+            inline constexpr const char* LAMBDA_DSSIM = "training.tooltip.lambda_dssim";
+            inline constexpr const char* TV_LOSS_WEIGHT = "training.tooltip.tv_loss_weight";
+            inline constexpr const char* REFINE_EVERY = "training.tooltip.refine_every";
+            inline constexpr const char* START_REFINE = "training.tooltip.start_refine";
+            inline constexpr const char* STOP_REFINE = "training.tooltip.stop_refine";
+            inline constexpr const char* RESET_EVERY = "training.tooltip.reset_every";
+            inline constexpr const char* SH_UPGRADE_EVERY = "training.tooltip.sh_upgrade_every";
+            inline constexpr const char* INIT_OPACITY = "training.tooltip.init_opacity";
+            inline constexpr const char* INIT_SCALING = "training.tooltip.init_scaling";
+            inline constexpr const char* RANDOM_INIT = "training.tooltip.random_init";
+            inline constexpr const char* NUM_POINTS = "training.tooltip.num_points";
+            inline constexpr const char* EXTENT = "training.tooltip.extent";
+            inline constexpr const char* RESIZE_FACTOR = "training.tooltip.resize_factor";
+            inline constexpr const char* MAX_WIDTH = "training.tooltip.max_width";
+            inline constexpr const char* CPU_CACHE = "training.tooltip.cpu_cache";
+            inline constexpr const char* FS_CACHE = "training.tooltip.fs_cache";
+            inline constexpr const char* SAVE_STEPS = "training.tooltip.save_steps";
+            inline constexpr const char* LR_POSITION = "training.tooltip.lr_position";
+            inline constexpr const char* LR_SH_COEFF = "training.tooltip.lr_sh_coeff";
+            inline constexpr const char* LR_OPACITY = "training.tooltip.lr_opacity";
+            inline constexpr const char* LR_SCALING = "training.tooltip.lr_scaling";
+            inline constexpr const char* LR_ROTATION = "training.tooltip.lr_rotation";
+            inline constexpr const char* BTN_START = "training.tooltip.btn_start";
+            inline constexpr const char* BTN_RESUME = "training.tooltip.btn_resume";
+            inline constexpr const char* BTN_PAUSE = "training.tooltip.btn_pause";
+            inline constexpr const char* BTN_STOP = "training.tooltip.btn_stop";
+            inline constexpr const char* BTN_RESET = "training.tooltip.btn_reset";
+            inline constexpr const char* BTN_CLEAR = "training.tooltip.btn_clear";
+            inline constexpr const char* BTN_SAVE_CHECKPOINT = "training.tooltip.btn_save_checkpoint";
+            inline constexpr const char* SAVE_STEP_INPUT = "training.tooltip.save_step_input";
+            inline constexpr const char* SAVE_STEP_ADD = "training.tooltip.save_step_add";
+            inline constexpr const char* SAVE_STEP_REMOVE = "training.tooltip.save_step_remove";
+            inline constexpr const char* PPISP = "training.tooltip.ppisp";
+            inline constexpr const char* PPISP_CONTROLLER = "training.tooltip.ppisp_controller";
+            inline constexpr const char* PPISP_LR = "training.tooltip.ppisp_lr";
+            inline constexpr const char* PPISP_REG = "training.tooltip.ppisp_reg";
+            inline constexpr const char* PPISP_WARMUP = "training.tooltip.ppisp_warmup";
+            inline constexpr const char* PPISP_ACTIVATION_STEP = "training.tooltip.ppisp_activation_step";
+            inline constexpr const char* PPISP_CONTROLLER_LR = "training.tooltip.ppisp_controller_lr";
+            inline constexpr const char* PPISP_FREEZE_GAUSSIANS = "training.tooltip.ppisp_freeze_gaussians";
+        } // namespace Tooltip
+
+        namespace Status {
+            inline constexpr const char* ENABLED = "training.status.enabled";
+            inline constexpr const char* DISABLED = "training.status.disabled";
+            inline constexpr const char* YES = "training.status.yes";
+            inline constexpr const char* NO = "training.status.no";
+        } // namespace Status
+
+        namespace Button {
+            inline constexpr const char* START = "training.button.start";
+            inline constexpr const char* RESUME = "training.button.resume";
+            inline constexpr const char* PAUSE = "training.button.pause";
+            inline constexpr const char* STOP = "training.button.stop";
+            inline constexpr const char* RESET = "training.button.reset";
+            inline constexpr const char* CLEAR = "training.button.clear";
+            inline constexpr const char* SAVE_CHECKPOINT = "training.button.save_checkpoint";
+            inline constexpr const char* SWITCH_EDIT_MODE = "training.button.switch_edit_mode";
+            inline constexpr const char* ADD = "training.button.add";
+            inline constexpr const char* REMOVE = "training.button.remove";
+        } // namespace Button
+    } // namespace Training
+
+    namespace Scene {
+        inline constexpr const char* ADD_PLY = "scene.add_ply";
+        inline constexpr const char* ADD_GROUP = "scene.add_group";
+        inline constexpr const char* ADD_GROUP_ELLIPSIS = "scene.add_group_ellipsis";
+        inline constexpr const char* EXPORT = "scene.export";
+        inline constexpr const char* DELETE_ITEM = "scene.delete";
+        inline constexpr const char* RENAME = "scene.rename";
+        inline constexpr const char* DUPLICATE_ITEM = "scene.duplicate";
+        inline constexpr const char* GO_TO_CAMERA_VIEW = "scene.go_to_camera_view";
+        inline constexpr const char* GO_TO_CAM_VIEW = "scene.go_to_cam_view";
+        inline constexpr const char* FIT_TO_SCENE = "scene.fit_to_scene";
+        inline constexpr const char* FIT_TO_SCENE_TRIMMED = "scene.fit_to_scene_trimmed";
+        inline constexpr const char* ADD_CROP_BOX = "scene.add_crop_box";
+        inline constexpr const char* ADD_CROP_ELLIPSOID = "scene.add_crop_ellipsoid";
+        inline constexpr const char* RESET_CROP = "scene.reset_crop";
+        inline constexpr const char* MERGE_TO_SINGLE_PLY = "scene.merge_to_single_ply";
+        inline constexpr const char* MOVE_TO = "scene.move_to";
+        inline constexpr const char* MOVE_TO_ROOT = "scene.move_to_root";
+        inline constexpr const char* IMAGES = "scene.images";
+        inline constexpr const char* NO_IMAGES = "scene.no_images";
+        inline constexpr const char* MOVE_NODE = "scene.move_node";
+        inline constexpr const char* MODELS = "scene.models";
+        inline constexpr const char* FILTER = "scene.filter";
+        inline constexpr const char* NO_DATA_LOADED = "scene.no_data_loaded";
+        inline constexpr const char* USE_FILE_MENU = "scene.use_file_menu";
+        inline constexpr const char* NO_MODELS_LOADED = "scene.no_models_loaded";
+        inline constexpr const char* RIGHT_CLICK_TO_ADD = "scene.right_click_to_add";
+        inline constexpr const char* NO_ACTIONS = "scene.no_actions";
+        inline constexpr const char* NO_GROUPS_AVAILABLE = "scene.no_groups_available";
+        inline constexpr const char* DELETE_NODE = "scene.delete_node";
+        inline constexpr const char* CANNOT_DELETE_TRAINING = "scene.cannot_delete_training";
+        inline constexpr const char* BACKGROUND = "scene.background";
+        inline constexpr const char* ENABLE_FOR_TRAINING = "scene.enable_for_training";
+        inline constexpr const char* DISABLE_FOR_TRAINING = "scene.disable_for_training";
+        inline constexpr const char* ENABLE_ALL_TRAINING = "scene.enable_all_training";
+        inline constexpr const char* DISABLE_ALL_TRAINING = "scene.disable_all_training";
+        inline constexpr const char* TRAINING_ENABLED_TOOLTIP = "scene.training_enabled_tooltip";
+        inline constexpr const char* TRAINING_DISABLED_TOOLTIP = "scene.training_disabled_tooltip";
+        inline constexpr const char* GO_TO_KEYFRAME = "scene.go_to_keyframe";
+        inline constexpr const char* UPDATE_KEYFRAME = "scene.update_keyframe";
+        inline constexpr const char* SELECT_IN_TIMELINE = "scene.select_in_timeline";
+        inline constexpr const char* ADD_KEYFRAME_SCENE = "scene.add_keyframe_scene";
+        inline constexpr const char* KEYFRAME_EASING = "scene.keyframe_easing";
+        inline constexpr const char* KEYFRAME_EASING_LINEAR = "scene.keyframe_easing.linear";
+        inline constexpr const char* KEYFRAME_EASING_EASE_IN = "scene.keyframe_easing.ease_in";
+        inline constexpr const char* KEYFRAME_EASING_EASE_OUT = "scene.keyframe_easing.ease_out";
+        inline constexpr const char* KEYFRAME_EASING_EASE_IN_OUT = "scene.keyframe_easing.ease_in_out";
+    } // namespace Scene
+
+    namespace Export {
+        inline constexpr const char* TITLE = "export.title";
+        inline constexpr const char* FORMAT_PLY_STANDARD = "export.format.ply_standard";
+        inline constexpr const char* FORMAT_SOG_SUPERSPLAT = "export.format.sog_supersplat";
+        inline constexpr const char* FORMAT_SPZ_NIANTIC = "export.format.spz_niantic";
+        inline constexpr const char* FORMAT_HTML_VIEWER = "export.format.html_viewer";
+        inline constexpr const char* SELECT_MODELS = "export.select_models";
+        inline constexpr const char* ALL = "export.all";
+        inline constexpr const char* NONE = "export.none";
+        inline constexpr const char* CANCEL = "export.cancel";
+        inline constexpr const char* EXPORT = "export.export";
+        inline constexpr const char* EXPORTING = "export.exporting";
+        inline constexpr const char* WRITING_PLY = "export.writing_ply";
+        inline constexpr const char* WRITING_SPZ = "export.writing_spz";
+        inline constexpr const char* COMPLETE = "export.complete";
+        inline constexpr const char* FAILED = "export.failed";
+        inline constexpr const char* SELECT_AT_LEAST_ONE = "export.select_at_least_one";
+    } // namespace Export
+
+    namespace Common {
+        inline constexpr const char* OK = "common.ok";
+        inline constexpr const char* CANCEL = "common.cancel";
+        inline constexpr const char* CLOSE = "common.close";
+        inline constexpr const char* SAVE = "common.save";
+        inline constexpr const char* LOAD = "common.load";
+        inline constexpr const char* ADD = "common.add";
+        inline constexpr const char* REMOVE = "common.remove";
+        inline constexpr const char* DELETE_ITEM = "common.delete";
+        inline constexpr const char* EDIT = "common.edit";
+        inline constexpr const char* BROWSE = "common.browse";
+        inline constexpr const char* APPLY = "common.apply";
+        inline constexpr const char* RESET = "common.reset";
+        inline constexpr const char* DOUBLE_CLICK_RESET = "common.double_click_reset";
+    } // namespace Common
+
+    namespace Status {
+        inline constexpr const char* READY = "status.ready";
+        inline constexpr const char* TRAINING = "status.training";
+        inline constexpr const char* PAUSED = "status.paused";
+        inline constexpr const char* STOPPED = "status.stopped";
+        inline constexpr const char* STOPPING = "status.stopping";
+        inline constexpr const char* COMPLETE = "status.complete";
+        inline constexpr const char* ERROR_STATE = "status.error";
+        inline constexpr const char* LOADING = "status.loading";
+        inline constexpr const char* EMPTY = "status.empty";
+        inline constexpr const char* MODE = "status.mode";
+        inline constexpr const char* GAUSSIANS = "status.gaussians";
+        inline constexpr const char* ITERATION = "status.iteration";
+        inline constexpr const char* FPS = "status.fps";
+        inline constexpr const char* STEP = "status.step";
+        inline constexpr const char* LOSS = "status.loss";
+        inline constexpr const char* ETA = "status.eta";
+        inline constexpr const char* UNKNOWN = "status.unknown";
+        inline constexpr const char* DATASET_NO_TRAINER = "status.dataset_no_trainer";
+        inline constexpr const char* DATASET_READY = "status.dataset_ready";
+        inline constexpr const char* TRAINING_PAUSED = "status.training_paused";
+        inline constexpr const char* TRAINING_FINISHED = "status.training_finished";
+        inline constexpr const char* PLY_MODELS_COUNT = "status.ply_models_count";
+    } // namespace Status
+
+    namespace Mode {
+        inline constexpr const char* EMPTY = "mode.empty";
+        inline constexpr const char* DATASET = "mode.dataset";
+        inline constexpr const char* EDIT_MODE = "mode.edit_mode";
+        inline constexpr const char* PLY_MODELS = "mode.ply_models";
+    } // namespace Mode
+
+    namespace Messages {
+        inline constexpr const char* NO_DATA_LOADED = "messages.no_data_loaded";
+        inline constexpr const char* USE_FILE_MENU = "messages.use_file_menu";
+        inline constexpr const char* NO_MODELS_LOADED = "messages.no_models_loaded";
+        inline constexpr const char* RIGHT_CLICK_TO_ADD = "messages.right_click_to_add";
+        inline constexpr const char* TRAINING_COMPLETE = "messages.training_complete";
+        inline constexpr const char* TRAINING_STOPPED = "messages.training_stopped";
+        inline constexpr const char* TRAINING_ERROR = "messages.training_error";
+        inline constexpr const char* PARAM_MANAGER_UNAVAILABLE = "messages.param_manager_unavailable";
+        inline constexpr const char* FAILED_TO_LOAD_PARAMS = "messages.failed_to_load_params";
+        inline constexpr const char* ERR_DISTORTED_IMAGES = "messages.err_distorted_images";
+        inline constexpr const char* ERR_ORTHO_NOT_SUPPORTED = "messages.err_ortho_not_supported";
+        inline constexpr const char* ERR_NON_PINHOLE = "messages.err_non_pinhole";
+    } // namespace Messages
+
+    namespace Controls {
+        inline constexpr const char* WASD = "controls.wasd";
+        inline constexpr const char* ZOOM = "controls.zoom";
+    } // namespace Controls
+
+    namespace Preferences {
+        inline constexpr const char* TITLE = "preferences.title";
+        inline constexpr const char* LANGUAGE = "preferences.language";
+        inline constexpr const char* SELECT_LANGUAGE = "preferences.select_language";
+    } // namespace Preferences
+
+    namespace MainPanel {
+        inline constexpr const char* WINDOWS = "main_panel.windows";
+        inline constexpr const char* SCENE_PANEL = "main_panel.scene_panel";
+        inline constexpr const char* SHOW_CONSOLE = "main_panel.show_console";
+        inline constexpr const char* HIDE_CONSOLE = "main_panel.hide_console";
+        inline constexpr const char* BACKGROUND = "main_panel.background";
+        inline constexpr const char* COLOR = "main_panel.color";
+        inline constexpr const char* SHOW_COORD_AXES = "main_panel.show_coord_axes";
+        inline constexpr const char* VISIBLE_AXES = "main_panel.visible_axes";
+        inline constexpr const char* AXES_SIZE = "main_panel.axes_size";
+        inline constexpr const char* SHOW_PIVOT = "main_panel.show_pivot";
+        inline constexpr const char* SHOW_GRID = "main_panel.show_grid";
+        inline constexpr const char* GRID_OPACITY = "main_panel.grid_opacity";
+        inline constexpr const char* PLANE = "main_panel.plane";
+        inline constexpr const char* PLANE_YZ = "main_panel.plane_yz";
+        inline constexpr const char* PLANE_XZ = "main_panel.plane_xz";
+        inline constexpr const char* PLANE_XY = "main_panel.plane_xy";
+        inline constexpr const char* CAMERA_FRUSTUMS = "main_panel.camera_frustums";
+        inline constexpr const char* POINT_CLOUD_MODE = "main_panel.point_cloud_mode";
+        inline constexpr const char* DESATURATE_UNSELECTED = "main_panel.desaturate_unselected";
+        inline constexpr const char* DESATURATE_CROPPING = "main_panel.desaturate_cropping";
+        inline constexpr const char* FOV = "main_panel.fov";
+        inline constexpr const char* FOCAL_LENGTH = "main_panel.focal_length";
+        inline constexpr const char* FOV_INFO = "main_panel.fov_info";
+        inline constexpr const char* SH_DEGREE = "main_panel.sh_degree";
+        inline constexpr const char* EQUIRECTANGULAR = "main_panel.equirectangular";
+        inline constexpr const char* GUT_MODE = "main_panel.gut_mode";
+        inline constexpr const char* MIP_FILTER = "main_panel.mip_filter";
+        inline constexpr const char* APPEARANCE_CORRECTION = "main_panel.appearance_correction";
+        inline constexpr const char* PPISP_MODE = "main_panel.ppisp_mode";
+        inline constexpr const char* PPISP_MODE_MANUAL = "main_panel.ppisp_mode_manual";
+        inline constexpr const char* PPISP_MODE_AUTO = "main_panel.ppisp_mode_auto";
+        inline constexpr const char* PPISP_EXPOSURE = "main_panel.ppisp_exposure";
+        inline constexpr const char* PPISP_VIGNETTE = "main_panel.ppisp_vignette";
+        inline constexpr const char* PPISP_COLOR_BALANCE = "main_panel.ppisp_color_balance";
+        inline constexpr const char* PPISP_GAMMA = "main_panel.ppisp_gamma";
+        inline constexpr const char* PPISP_CRF_ADVANCED = "main_panel.ppisp_crf_advanced";
+        inline constexpr const char* PPISP_GAMMA_RED = "main_panel.ppisp_gamma_red";
+        inline constexpr const char* PPISP_GAMMA_GREEN = "main_panel.ppisp_gamma_green";
+        inline constexpr const char* PPISP_GAMMA_BLUE = "main_panel.ppisp_gamma_blue";
+        inline constexpr const char* PPISP_CRF_TOE = "main_panel.ppisp_crf_toe";
+        inline constexpr const char* PPISP_CRF_SHOULDER = "main_panel.ppisp_crf_shoulder";
+        inline constexpr const char* RENDER_SCALE = "main_panel.render_scale";
+        inline constexpr const char* SELECTION_COLORS = "main_panel.selection_colors";
+        inline constexpr const char* COMMITTED = "main_panel.committed";
+        inline constexpr const char* PREVIEW = "main_panel.preview";
+        inline constexpr const char* CENTER_MARKER = "main_panel.center_marker";
+        inline constexpr const char* SELECTION_GROUPS = "main_panel.selection_groups";
+        inline constexpr const char* ADD_GROUP = "main_panel.add_group";
+        inline constexpr const char* NO_SELECTION_GROUPS = "main_panel.no_selection_groups";
+        inline constexpr const char* CLEAR = "main_panel.clear";
+    } // namespace MainPanel
+
+    namespace Toolbar {
+        inline constexpr const char* SELECTION = "toolbar.selection";
+        inline constexpr const char* TRANSLATE = "toolbar.translate";
+        inline constexpr const char* ROTATE = "toolbar.rotate";
+        inline constexpr const char* SCALE = "toolbar.scale";
+        inline constexpr const char* MIRROR = "toolbar.mirror";
+        inline constexpr const char* PAINTING = "toolbar.painting";
+        inline constexpr const char* ALIGN_3POINT = "toolbar.align_3point";
+        inline constexpr const char* CROP_BOX = "toolbar.crop_box";
+        inline constexpr const char* ELLIPSOID = "toolbar.ellipsoid";
+        inline constexpr const char* BRUSH_SELECTION = "toolbar.brush_selection";
+        inline constexpr const char* RECT_SELECTION = "toolbar.rect_selection";
+        inline constexpr const char* POLYGON_SELECTION = "toolbar.polygon_selection";
+        inline constexpr const char* LASSO_SELECTION = "toolbar.lasso_selection";
+        inline constexpr const char* RING_SELECTION = "toolbar.ring_selection";
+        inline constexpr const char* LOCAL_SPACE = "toolbar.local_space";
+        inline constexpr const char* WORLD_SPACE = "toolbar.world_space";
+        inline constexpr const char* ORIGIN_PIVOT = "toolbar.origin_pivot";
+        inline constexpr const char* BOUNDS_CENTER_PIVOT = "toolbar.bounds_center_pivot";
+        inline constexpr const char* RESIZE_BOUNDS = "toolbar.resize_bounds";
+        inline constexpr const char* MIRROR_X = "toolbar.mirror_x";
+        inline constexpr const char* MIRROR_Y = "toolbar.mirror_y";
+        inline constexpr const char* MIRROR_Z = "toolbar.mirror_z";
+        inline constexpr const char* RESET_DEFAULT = "toolbar.reset_default";
+        inline constexpr const char* HOME = "toolbar.home";
+        inline constexpr const char* FULLSCREEN = "toolbar.fullscreen";
+        inline constexpr const char* TOGGLE_UI = "toolbar.toggle_ui";
+        inline constexpr const char* SPLAT_RENDERING = "toolbar.splat_rendering";
+        inline constexpr const char* POINT_CLOUD = "toolbar.point_cloud";
+        inline constexpr const char* GAUSSIAN_RINGS = "toolbar.gaussian_rings";
+        inline constexpr const char* CENTER_MARKERS = "toolbar.center_markers";
+        inline constexpr const char* PERSPECTIVE = "toolbar.perspective";
+        inline constexpr const char* ORTHOGRAPHIC = "toolbar.orthographic";
+        inline constexpr const char* SEQUENCER = "toolbar.sequencer";
+    } // namespace Toolbar
+
+    namespace Transform {
+        inline constexpr const char* NODE = "transform.node";
+        inline constexpr const char* SPACE = "transform.space";
+        inline constexpr const char* WORLD = "transform.world";
+        inline constexpr const char* LOCAL = "transform.local";
+        inline constexpr const char* POSITION = "transform.position";
+        inline constexpr const char* ROTATION = "transform.rotation";
+        inline constexpr const char* ROTATION_DEGREES = "transform.rotation_degrees";
+        inline constexpr const char* SCALE = "transform.scale";
+        inline constexpr const char* UNIFORM_SCALE = "transform.uniform_scale";
+        inline constexpr const char* USE_GIZMO = "transform.use_gizmo";
+        inline constexpr const char* RESET_ALL = "transform.reset_all";
+        inline constexpr const char* RESET_TRANSFORM = "transform.reset_transform";
+        inline constexpr const char* NODES_SELECTED = "transform.nodes_selected";
+    } // namespace Transform
+
+    namespace CropBox {
+        inline constexpr const char* TITLE = "cropbox.title";
+        inline constexpr const char* NOT_VISIBLE = "cropbox.not_visible";
+        inline constexpr const char* NO_SELECTION = "cropbox.no_selection";
+        inline constexpr const char* INVALID = "cropbox.invalid";
+        inline constexpr const char* POSITION = "cropbox.position";
+        inline constexpr const char* ROTATION = "cropbox.rotation";
+        inline constexpr const char* SIZE = "cropbox.size";
+        inline constexpr const char* APPEARANCE = "cropbox.appearance";
+        inline constexpr const char* LINE_WIDTH = "cropbox.line_width";
+        inline constexpr const char* INSTRUCTIONS = "cropbox.instructions";
+    } // namespace CropBox
+
+    namespace Ellipsoid {
+        inline constexpr const char* TITLE = "ellipsoid.title";
+        inline constexpr const char* NOT_VISIBLE = "ellipsoid.not_visible";
+        inline constexpr const char* NO_SELECTION = "ellipsoid.no_selection";
+        inline constexpr const char* INVALID = "ellipsoid.invalid";
+        inline constexpr const char* POSITION = "ellipsoid.position";
+        inline constexpr const char* ROTATION = "ellipsoid.rotation";
+        inline constexpr const char* RADII = "ellipsoid.radii";
+        inline constexpr const char* APPEARANCE = "ellipsoid.appearance";
+        inline constexpr const char* LINE_WIDTH = "ellipsoid.line_width";
+        inline constexpr const char* INSTRUCTIONS = "ellipsoid.instructions";
+    } // namespace Ellipsoid
+
+    namespace TrainingPanel {
+        inline constexpr const char* START_TRAINING = "training_panel.start_training";
+        inline constexpr const char* RESUME_TRAINING = "training_panel.resume_training";
+        inline constexpr const char* PAUSE = "training_panel.pause";
+        inline constexpr const char* RESUME = "training_panel.resume";
+        inline constexpr const char* STOP = "training_panel.stop";
+        inline constexpr const char* RESET = "training_panel.reset";
+        inline constexpr const char* CLEAR = "training_panel.clear";
+        inline constexpr const char* SWITCH_EDIT_MODE = "training_panel.switch_edit_mode";
+        inline constexpr const char* SAVE_CHECKPOINT = "training_panel.save_checkpoint";
+        inline constexpr const char* CHECKPOINT_SAVED = "training_panel.checkpoint_saved";
+        inline constexpr const char* IDLE = "training_panel.idle";
+        inline constexpr const char* RUNNING = "training_panel.running";
+        inline constexpr const char* FINISHED = "training_panel.finished";
+        inline constexpr const char* SAVE_STEPS = "training_panel.save_steps";
+        inline constexpr const char* NEW_STEP = "training_panel.new_step";
+        inline constexpr const char* NO_SAVE_STEPS = "training_panel.no_save_steps";
+        inline constexpr const char* SPARSITY = "training_panel.sparsity";
+        inline constexpr const char* PRUNING_GROWING = "training_panel.pruning_growing";
+    } // namespace TrainingPanel
+
+    namespace Tooltip {
+        inline constexpr const char* GUT_MODE = "tooltip.gut_mode";
+        inline constexpr const char* MIP_FILTER = "tooltip.mip_filter";
+        inline constexpr const char* APPEARANCE_CORRECTION = "tooltip.appearance_correction";
+        inline constexpr const char* PPISP_MODE = "tooltip.ppisp_mode";
+        inline constexpr const char* PPISP_EXPOSURE = "tooltip.ppisp_exposure";
+        inline constexpr const char* PPISP_GAMMA = "tooltip.ppisp_gamma";
+        inline constexpr const char* PPISP_COLOR_RGB = "tooltip.ppisp_color_rgb";
+        inline constexpr const char* PPISP_GAMMA_CHANNEL = "tooltip.ppisp_gamma_channel";
+        inline constexpr const char* PPISP_CRF_TOE = "tooltip.ppisp_crf_toe";
+        inline constexpr const char* PPISP_CRF_SHOULDER = "tooltip.ppisp_crf_shoulder";
+        inline constexpr const char* RENDER_SCALE = "tooltip.render_scale";
+        inline constexpr const char* POINT_CLOUD_FORCED = "tooltip.point_cloud_forced";
+        inline constexpr const char* DESATURATE_UNSELECTED = "tooltip.desaturate_unselected";
+        inline constexpr const char* DESATURATE_CROPPING = "tooltip.desaturate_cropping";
+        inline constexpr const char* LOCKED = "tooltip.locked";
+        inline constexpr const char* UNLOCKED = "tooltip.unlocked";
+        inline constexpr const char* POINT_SIZE = "tooltip.point_size";
+        inline constexpr const char* SCALE_CAMERA = "tooltip.scale_camera";
+        inline constexpr const char* SH_DEGREE = "tooltip.sh_degree";
+        inline constexpr const char* EQUIRECTANGULAR = "tooltip.equirectangular";
+        inline constexpr const char* FOV = "tooltip.fov";
+        inline constexpr const char* FOCAL_LENGTH = "tooltip.focal_length";
+        inline constexpr const char* BACKGROUND = "tooltip.background";
+        inline constexpr const char* COORD_AXES = "tooltip.coord_axes";
+        inline constexpr const char* PIVOT = "tooltip.pivot";
+        inline constexpr const char* GRID = "tooltip.grid";
+        inline constexpr const char* CAMERA_FRUSTUMS = "tooltip.camera_frustums";
+        inline constexpr const char* POINT_CLOUD_MODE = "tooltip.point_cloud_mode";
+        inline constexpr const char* SELECTION_COLORS = "tooltip.selection_colors";
+    } // namespace Tooltip
+
+    namespace ExitPopup {
+        inline constexpr const char* TITLE = "exit_popup.title";
+        inline constexpr const char* MESSAGE = "exit_popup.message";
+        inline constexpr const char* UNSAVED_WARNING = "exit_popup.unsaved_warning";
+        inline constexpr const char* EXIT = "exit_popup.exit";
+    } // namespace ExitPopup
+
+    namespace LoadDatasetPopup {
+        inline constexpr const char* TITLE = "load_dataset_popup.title";
+        inline constexpr const char* CONFIGURE_PATHS = "load_dataset_popup.configure_paths";
+        inline constexpr const char* IMAGES_DIR = "load_dataset_popup.images_dir";
+        inline constexpr const char* SPARSE_DIR = "load_dataset_popup.sparse_dir";
+        inline constexpr const char* MASKS_DIR = "load_dataset_popup.masks_dir";
+        inline constexpr const char* OUTPUT_DIR = "load_dataset_popup.output_dir";
+        inline constexpr const char* INIT_FILE = "load_dataset_popup.init_file";
+        inline constexpr const char* HELP_TEXT = "load_dataset_popup.help_text";
+    } // namespace LoadDatasetPopup
+
+    namespace Notification {
+        inline constexpr const char* CANNOT_OPEN = "notification.cannot_open";
+        inline constexpr const char* DROPPED_NOT_RECOGNIZED = "notification.dropped_not_recognized";
+        inline constexpr const char* DIRECTORY = "notification.directory";
+        inline constexpr const char* FILE = "notification.file";
+        inline constexpr const char* ITEMS = "notification.items";
+        inline constexpr const char* AND_MORE = "notification.and_more";
+    } // namespace Notification
+
+    namespace ResumeCheckpointPopup_ {
+        inline constexpr const char* TITLE = "resume_checkpoint_popup.title";
+        inline constexpr const char* CHECKPOINT = "resume_checkpoint_popup.checkpoint";
+        inline constexpr const char* CONFIGURE_PATHS = "resume_checkpoint_popup.configure_paths";
+        inline constexpr const char* FILE = "resume_checkpoint_popup.file";
+        inline constexpr const char* STORED_PATH = "resume_checkpoint_popup.stored_path";
+        inline constexpr const char* NOT_FOUND = "resume_checkpoint_popup.not_found";
+        inline constexpr const char* DATASET_PATH = "resume_checkpoint_popup.dataset_path";
+        inline constexpr const char* INVALID = "resume_checkpoint_popup.invalid";
+        inline constexpr const char* HELP_TEXT = "resume_checkpoint_popup.help_text";
+    } // namespace ResumeCheckpointPopup_
+
+    namespace ExportDialog {
+        inline constexpr const char* FORMAT = "export_dialog.format";
+        inline constexpr const char* MODELS = "export_dialog.models";
+        inline constexpr const char* NO_MODELS = "export_dialog.no_models";
+        inline constexpr const char* SH_DEGREE = "export_dialog.sh_degree";
+        inline constexpr const char* EXPORT_MERGED = "export_dialog.export_merged";
+    } // namespace ExportDialog
+
+    namespace SelectionGroup {
+        inline constexpr const char* LOCK = "selection_group.lock";
+        inline constexpr const char* UNLOCK = "selection_group.unlock";
+    } // namespace SelectionGroup
+
+    namespace Progress {
+        inline constexpr const char* LOSS = "progress.loss";
+        inline constexpr const char* GAUSSIANS_COUNT = "progress.gaussians_count";
+        inline constexpr const char* EXPORTING = "progress.exporting";
+        inline constexpr const char* IMPORTING = "progress.importing";
+        inline constexpr const char* IMPORT_COMPLETE = "progress.import_complete";
+        inline constexpr const char* IMPORT_FAILED = "progress.import_failed";
+        inline constexpr const char* IMPORT_COMPLETE_TITLE = "progress.import_complete_title";
+        inline constexpr const char* IMPORT_FAILED_TITLE = "progress.import_failed_title";
+        inline constexpr const char* NUM_SPLATS = "progress.num_splats";
+        inline constexpr const char* STATUS_LABEL = "progress.status_label";
+    } // namespace Progress
+
+    namespace InputSettings {
+        inline constexpr const char* ACTIVE_PROFILE = "input_settings.active_profile";
+        inline constexpr const char* SAVE_CURRENT_PROFILE = "input_settings.save_current_profile";
+        inline constexpr const char* RESET_TO_DEFAULT = "input_settings.reset_to_default";
+        inline constexpr const char* EXPORT = "input_settings.export";
+        inline constexpr const char* IMPORT = "input_settings.import";
+        inline constexpr const char* ACTION = "input_settings.action";
+        inline constexpr const char* BINDING = "input_settings.binding";
+        inline constexpr const char* REBIND = "input_settings.rebind";
+        inline constexpr const char* CANCEL = "input_settings.cancel";
+        inline constexpr const char* PRESS_KEY_OR_CLICK = "input_settings.press_key_or_click";
+        inline constexpr const char* CLICK_AGAIN_DOUBLE = "input_settings.click_again_double";
+        inline constexpr const char* TOOL_MODE = "input_settings.tool_mode";
+        inline constexpr const char* SELECT_TOOL_MODE = "input_settings.select_tool_mode";
+        inline constexpr const char* CURRENT_BINDINGS = "input_settings.current_bindings";
+        inline constexpr const char* GLOBAL_BINDINGS_HINT = "input_settings.global_bindings_hint";
+        inline constexpr const char* TOOL_BINDINGS_HINT = "input_settings.tool_bindings_hint";
+        inline constexpr const char* SECTION_NAVIGATION = "input_settings.section.navigation";
+        inline constexpr const char* SECTION_SELECTION = "input_settings.section.selection";
+        inline constexpr const char* SECTION_BRUSH = "input_settings.section.brush";
+        inline constexpr const char* SECTION_CROP_BOX = "input_settings.section.crop_box";
+        inline constexpr const char* SECTION_EDITING = "input_settings.section.editing";
+        inline constexpr const char* SECTION_VIEW = "input_settings.section.view";
+        inline constexpr const char* MODE_GLOBAL = "input_settings.mode.global";
+        inline constexpr const char* MODE_SELECTION = "input_settings.mode.selection";
+        inline constexpr const char* MODE_BRUSH = "input_settings.mode.brush";
+        inline constexpr const char* MODE_TRANSLATE = "input_settings.mode.translate";
+        inline constexpr const char* MODE_ROTATE = "input_settings.mode.rotate";
+        inline constexpr const char* MODE_SCALE = "input_settings.mode.scale";
+        inline constexpr const char* MODE_ALIGN = "input_settings.mode.align";
+        inline constexpr const char* MODE_CROP_BOX = "input_settings.mode.crop_box";
+        inline constexpr const char* MODE_UNKNOWN = "input_settings.mode.unknown";
+    } // namespace InputSettings
+
+    namespace DebugInfo {
+        inline constexpr const char* FREE_MEMORY = "debug_info.free_memory";
+        inline constexpr const char* ENABLE_TRACING = "debug_info.enable_tracing";
+        inline constexpr const char* RECORDED_OPERATIONS = "debug_info.recorded_operations";
+        inline constexpr const char* CLEAR_HISTORY = "debug_info.clear_history";
+        inline constexpr const char* PRINT_TO_LOG = "debug_info.print_to_log";
+    } // namespace DebugInfo
+
+    namespace TrainingParams {
+        inline constexpr const char* STRATEGY = "training_params.strategy";
+        inline constexpr const char* ITERATIONS = "training_params.iterations";
+        inline constexpr const char* MAX_GAUSSIANS = "training_params.max_gaussians";
+        inline constexpr const char* SH_DEGREE = "training_params.sh_degree";
+        inline constexpr const char* TILE_MODE = "training_params.tile_mode";
+        inline constexpr const char* STEPS_SCALER = "training_params.steps_scaler";
+        inline constexpr const char* BILATERAL_GRID = "training_params.bilateral_grid";
+        inline constexpr const char* MASK_MODE = "training_params.mask_mode";
+        inline constexpr const char* INVERT_MASKS = "training_params.invert_masks";
+        inline constexpr const char* OPACITY_PENALTY_WEIGHT = "training_params.opacity_penalty_weight";
+        inline constexpr const char* OPACITY_PENALTY_POWER = "training_params.opacity_penalty_power";
+        inline constexpr const char* MASK_THRESHOLD = "training_params.mask_threshold";
+        inline constexpr const char* USE_ALPHA_AS_MASK = "training_params.use_alpha_as_mask";
+        inline constexpr const char* SPARSITY = "training_params.sparsity";
+        inline constexpr const char* GUT = "training_params.gut";
+        inline constexpr const char* UNDISTORT = "training_params.undistort";
+        inline constexpr const char* MIP_FILTER = "training_params.mip_filter";
+        inline constexpr const char* BG_SETTINGS = "training_params.bg_settings";
+        inline constexpr const char* BG_MODE = "training_params.bg_mode";
+        inline constexpr const char* BG_MODE_COLOR = "training_params.bg_mode_color";
+        inline constexpr const char* BG_MODE_MODULATION = "training_params.bg_mode_modulation";
+        inline constexpr const char* BG_MODE_IMAGE = "training_params.bg_mode_image";
+        inline constexpr const char* BG_MODE_RANDOM = "training_params.bg_mode_random";
+        inline constexpr const char* BG_MODULATION = "training_params.bg_modulation";
+        inline constexpr const char* BG_COLOR = "training_params.bg_color";
+        inline constexpr const char* BG_IMAGE = "training_params.bg_image";
+        inline constexpr const char* BG_IMAGE_BROWSE = "training_params.bg_image_browse";
+        inline constexpr const char* BG_IMAGE_CLEAR = "training_params.bg_image_clear";
+        inline constexpr const char* INIT_OPACITY = "training_params.init_opacity";
+        inline constexpr const char* INIT_SCALING = "training_params.init_scaling";
+        inline constexpr const char* RANDOM_INIT = "training_params.random_init";
+        inline constexpr const char* NUM_POINTS = "training_params.num_points";
+        inline constexpr const char* EXTENT = "training_params.extent";
+        inline constexpr const char* PRUNE_SCALE_3D = "training_params.prune_scale_3d";
+        inline constexpr const char* PRUNE_OPACITY = "training_params.prune_opacity";
+        inline constexpr const char* PRUNE_SCALE_2D = "training_params.prune_scale_2d";
+        inline constexpr const char* PAUSE_AFTER_RESET = "training_params.pause_after_reset";
+        inline constexpr const char* REVISED_OPACITY = "training_params.revised_opacity";
+        inline constexpr const char* SPARSIFY_STEPS = "training_params.sparsify_steps";
+        inline constexpr const char* INIT_RHO = "training_params.init_rho";
+        inline constexpr const char* PRUNE_RATIO = "training_params.prune_ratio";
+        inline constexpr const char* PPISP = "training_params.ppisp";
+        inline constexpr const char* PPISP_CONTROLLER = "training_params.ppisp_controller";
+        inline constexpr const char* PPISP_SETTINGS = "training_params.ppisp_settings";
+        inline constexpr const char* PPISP_LR = "training_params.ppisp_lr";
+        inline constexpr const char* PPISP_REG = "training_params.ppisp_reg";
+        inline constexpr const char* PPISP_WARMUP = "training_params.ppisp_warmup";
+        inline constexpr const char* PPISP_ENABLE_CONTROLLER = "training_params.ppisp_enable_controller";
+        inline constexpr const char* PPISP_ACTIVATION_STEP = "training_params.ppisp_activation_step";
+        inline constexpr const char* PPISP_CONTROLLER_LR = "training_params.ppisp_controller_lr";
+        inline constexpr const char* PPISP_FREEZE_GAUSSIANS = "training_params.ppisp_freeze_gaussians";
+        inline constexpr const char* DISABLED = "training_params.disabled";
+    } // namespace TrainingParams
+
+    namespace ImagePreview {
+        inline constexpr const char* IMAGE_SECTION = "image_preview.image_section";
+        inline constexpr const char* FILE_SECTION = "image_preview.file_section";
+        inline constexpr const char* VIEW_SECTION = "image_preview.view_section";
+        inline constexpr const char* VIEW = "image_preview.view";
+        inline constexpr const char* NAVIGATE = "image_preview.navigate";
+        inline constexpr const char* FIT_TO_WINDOW = "image_preview.fit_to_window";
+        inline constexpr const char* SHOW_INFO_PANEL = "image_preview.show_info_panel";
+        inline constexpr const char* SHOW_MASK_OVERLAY = "image_preview.show_mask_overlay";
+        inline constexpr const char* RESET_VIEW = "image_preview.reset_view";
+        inline constexpr const char* ACTUAL_SIZE = "image_preview.actual_size";
+        inline constexpr const char* PREVIOUS = "image_preview.previous";
+        inline constexpr const char* NEXT = "image_preview.next";
+        inline constexpr const char* FIRST = "image_preview.first";
+        inline constexpr const char* LAST = "image_preview.last";
+        inline constexpr const char* NAME = "image_preview.name";
+        inline constexpr const char* FORMAT = "image_preview.format";
+        inline constexpr const char* SIZE_MB = "image_preview.size_mb";
+        inline constexpr const char* SIZE_KB = "image_preview.size_kb";
+        inline constexpr const char* SIZE_BYTES = "image_preview.size_bytes";
+        inline constexpr const char* MODIFIED = "image_preview.modified";
+        inline constexpr const char* PATH = "image_preview.path";
+        inline constexpr const char* MEGAPIXELS = "image_preview.megapixels";
+        inline constexpr const char* CHANNELS = "image_preview.channels";
+        inline constexpr const char* COLOR_SPACE = "image_preview.color_space";
+        inline constexpr const char* CAMERA = "image_preview.camera";
+        inline constexpr const char* LENS = "image_preview.lens";
+        inline constexpr const char* FOCAL_LENGTH = "image_preview.focal_length";
+        inline constexpr const char* FOCAL_35MM = "image_preview.focal_35mm";
+        inline constexpr const char* EXPOSURE = "image_preview.exposure";
+        inline constexpr const char* APERTURE = "image_preview.aperture";
+        inline constexpr const char* DATE = "image_preview.date";
+        inline constexpr const char* SOFTWARE = "image_preview.software";
+        inline constexpr const char* FIT_STATUS = "image_preview.fit_status";
+        inline constexpr const char* OVERLAY_STATUS = "image_preview.overlay_status";
+        inline constexpr const char* FILE_LABEL = "image_preview.file_label";
+        inline constexpr const char* VISIBLE = "image_preview.visible";
+        inline constexpr const char* HIDDEN = "image_preview.hidden";
+        inline constexpr const char* MASK_SECTION = "image_preview.mask_section";
+    } // namespace ImagePreview
+
+    namespace Startup {
+        inline constexpr const char* SUPPORTED_BY = "startup.supported_by";
+        inline constexpr const char* CLICK_TO_CONTINUE = "startup.click_to_continue";
+        inline constexpr const char* DROP_FILES_TITLE = "startup.drop_files_title";
+        inline constexpr const char* DROP_FILES_SUBTITLE = "startup.drop_files_subtitle";
+        inline constexpr const char* DROP_FILES_HINT = "startup.drop_files_hint";
+        inline constexpr const char* DROP_TO_IMPORT = "startup.drop_to_import";
+        inline constexpr const char* DROP_TO_IMPORT_SUBTITLE = "startup.drop_to_import_subtitle";
+    } // namespace Startup
+
+    namespace Axis {
+        inline constexpr const char* X = "axis.x";
+        inline constexpr const char* Y = "axis.y";
+        inline constexpr const char* Z = "axis.z";
+        inline constexpr const char* U = "axis.u";
+    } // namespace Axis
+
+    namespace VideoExtractor {
+        inline constexpr const char* TITLE = "video_extractor.title";
+        inline constexpr const char* SELECT_PREVIEW = "video_extractor.select_preview";
+        inline constexpr const char* STEP_BACKWARD = "video_extractor.step_backward";
+        inline constexpr const char* STEP_FORWARD = "video_extractor.step_forward";
+        inline constexpr const char* PAUSE = "video_extractor.pause";
+        inline constexpr const char* PLAY = "video_extractor.play";
+        inline constexpr const char* TRIM_RANGE = "video_extractor.trim_range";
+        inline constexpr const char* SET = "video_extractor.set";
+        inline constexpr const char* SET_START = "video_extractor.set_start";
+        inline constexpr const char* SET_END = "video_extractor.set_end";
+        inline constexpr const char* RESET = "video_extractor.reset";
+        inline constexpr const char* ESTIMATED_FRAMES = "video_extractor.estimated_frames";
+        inline constexpr const char* INPUT_VIDEO = "video_extractor.input_video";
+        inline constexpr const char* VIDEO = "video_extractor.video";
+        inline constexpr const char* NO_FILE = "video_extractor.no_file";
+        inline constexpr const char* BROWSE = "video_extractor.browse";
+        inline constexpr const char* OUTPUT = "video_extractor.output";
+        inline constexpr const char* NO_DIR = "video_extractor.no_dir";
+        inline constexpr const char* SELECT_FOLDER = "video_extractor.select_folder";
+        inline constexpr const char* SETTINGS = "video_extractor.settings";
+        inline constexpr const char* MODE = "video_extractor.mode";
+        inline constexpr const char* MODE_FPS = "video_extractor.mode_fps";
+        inline constexpr const char* MODE_INTERVAL = "video_extractor.mode_interval";
+        inline constexpr const char* FPS_LABEL = "video_extractor.fps_label";
+        inline constexpr const char* FPS_TOOLTIP = "video_extractor.fps_tooltip";
+        inline constexpr const char* EVERY_LABEL = "video_extractor.every_label";
+        inline constexpr const char* FRAMES_FORMAT = "video_extractor.frames_format";
+        inline constexpr const char* INTERVAL_TOOLTIP = "video_extractor.interval_tooltip";
+        inline constexpr const char* OUTPUT_FORMAT = "video_extractor.output_format";
+        inline constexpr const char* FORMAT = "video_extractor.format";
+        inline constexpr const char* FORMAT_PNG = "video_extractor.format_png";
+        inline constexpr const char* FORMAT_JPEG = "video_extractor.format_jpeg";
+        inline constexpr const char* QUALITY_LABEL = "video_extractor.quality_label";
+        inline constexpr const char* RESOLUTION = "video_extractor.resolution";
+        inline constexpr const char* RESOLUTION_LABEL = "video_extractor.resolution_label";
+        inline constexpr const char* RES_ORIGINAL = "video_extractor.res_original";
+        inline constexpr const char* RES_SCALE = "video_extractor.res_scale";
+        inline constexpr const char* RES_CUSTOM = "video_extractor.res_custom";
+        inline constexpr const char* WIDTH = "video_extractor.width";
+        inline constexpr const char* HEIGHT = "video_extractor.height";
+        inline constexpr const char* OUTPUT_RES = "video_extractor.output_res";
+        inline constexpr const char* NAMING = "video_extractor.naming";
+        inline constexpr const char* PATTERN = "video_extractor.pattern";
+        inline constexpr const char* PATTERN_TOOLTIP = "video_extractor.pattern_tooltip";
+        inline constexpr const char* EXAMPLE = "video_extractor.example";
+        inline constexpr const char* START = "video_extractor.start";
+        inline constexpr const char* CANCEL = "video_extractor.cancel";
+        inline constexpr const char* SELECT_BOTH = "video_extractor.select_both";
+        inline constexpr const char* EXTRACTING = "video_extractor.extracting";
+        inline constexpr const char* STARTING = "video_extractor.starting";
+        inline constexpr const char* COMPLETE = "video_extractor.complete";
+        inline constexpr const char* EXTRACTED = "video_extractor.extracted";
+        inline constexpr const char* OK = "video_extractor.ok";
+        inline constexpr const char* ERROR_MSG = "video_extractor.error";
+        inline constexpr const char* DISMISS = "video_extractor.dismiss";
+    } // namespace VideoExtractor
+
+    namespace Mesh2Splat {
+        inline constexpr const char* TITLE = "mesh2splat.title";
+        inline constexpr const char* SOURCE_MESH = "mesh2splat.source_mesh";
+        inline constexpr const char* NO_MESHES = "mesh2splat.no_meshes";
+        inline constexpr const char* CONVERT = "mesh2splat.convert";
+        inline constexpr const char* GAUSSIAN_SCALE = "mesh2splat.gaussian_scale";
+        inline constexpr const char* TOOLTIP_GAUSSIAN_SCALE = "mesh2splat.tooltip_gaussian_scale";
+        inline constexpr const char* SAMPLING_DENSITY_HEADER = "mesh2splat.sampling_density_header";
+        inline constexpr const char* SAMPLING_DENSITY = "mesh2splat.sampling_density";
+        inline constexpr const char* TOOLTIP_QUALITY = "mesh2splat.tooltip_quality";
+        inline constexpr const char* MAX_RESOLUTION = "mesh2splat.max_resolution";
+        inline constexpr const char* TOOLTIP_MAX_RESOLUTION = "mesh2splat.tooltip_max_resolution";
+        inline constexpr const char* EFFECTIVE_RESOLUTION = "mesh2splat.effective_resolution";
+    } // namespace Mesh2Splat
+
+    namespace Sequencer {
+        inline constexpr const char* EDIT_FOCAL_LENGTH = "sequencer.edit_focal_length";
+        inline constexpr const char* EDIT_FOCAL_LENGTH_TITLE = "sequencer.edit_focal_length_title";
+        inline constexpr const char* FOCAL_LENGTH_MM = "sequencer.focal_length_mm";
+        inline constexpr const char* GO_TO_FIRST_KEYFRAME = "sequencer.go_to_first_keyframe";
+        inline constexpr const char* STOP = "sequencer.stop";
+        inline constexpr const char* PAUSE = "sequencer.pause";
+        inline constexpr const char* PLAY = "sequencer.play";
+        inline constexpr const char* GO_TO_LAST_KEYFRAME = "sequencer.go_to_last_keyframe";
+        inline constexpr const char* LOOP_ON = "sequencer.loop_on";
+        inline constexpr const char* LOOP_OFF = "sequencer.loop_off";
+        inline constexpr const char* ADD_KEYFRAME = "sequencer.add_keyframe";
+        inline constexpr const char* EMPTY_HINT = "sequencer.empty_hint";
+        inline constexpr const char* UPDATE_TO_CURRENT_VIEW = "sequencer.update_to_current_view";
+        inline constexpr const char* GO_TO_KEYFRAME = "sequencer.go_to_keyframe";
+        inline constexpr const char* EDIT_TIME = "sequencer.edit_time";
+        inline constexpr const char* EASING = "sequencer.easing";
+        inline constexpr const char* EASING_LAST_KEYFRAME = "sequencer.easing_last_keyframe";
+        inline constexpr const char* EASING_TOOLTIP = "sequencer.easing_tooltip";
+        inline constexpr const char* DELETE_KEYFRAME = "sequencer.delete_keyframe";
+        inline constexpr const char* ADD_KEYFRAME_HERE = "sequencer.add_keyframe_here";
+        inline constexpr const char* EDIT_KEYFRAME_TIME = "sequencer.edit_keyframe_time";
+        inline constexpr const char* TIME_SECONDS = "sequencer.time_seconds";
+        inline constexpr const char* APPLY_U = "sequencer.apply_u";
+        inline constexpr const char* REVERT_ESC = "sequencer.revert_esc";
+        inline constexpr const char* EDITING_KEYFRAME = "sequencer.editing_keyframe";
+        inline constexpr const char* MOVE_TRANSLATE = "sequencer.move_translate";
+        inline constexpr const char* ROTATE = "sequencer.rotate";
+        inline constexpr const char* LOOP_POINT_TOOLTIP = "sequencer.loop_point_tooltip";
+        inline constexpr const char* KEYFRAME_TOOLTIP = "sequencer.keyframe_tooltip";
+        inline constexpr const char* PLAYBACK_TIME = "sequencer.playback_time";
+        inline constexpr const char* KEYFRAME_PREVIEW = "sequencer.keyframe_preview";
+    } // namespace Sequencer
+
+    namespace DiskSpaceDialog {
+        inline constexpr const char* TITLE = "disk_space_dialog.title";
+        inline constexpr const char* ERROR_LABEL = "disk_space_dialog.error_label";
+        inline constexpr const char* CHECKPOINT_SAVE_FAILED = "disk_space_dialog.checkpoint_save_failed";
+        inline constexpr const char* EXPORT_FAILED = "disk_space_dialog.export_failed";
+        inline constexpr const char* INSUFFICIENT_SPACE_PREFIX = "disk_space_dialog.insufficient_space_prefix";
+        inline constexpr const char* LOCATION_LABEL = "disk_space_dialog.location_label";
+        inline constexpr const char* REQUIRED_LABEL = "disk_space_dialog.required_label";
+        inline constexpr const char* AVAILABLE_LABEL = "disk_space_dialog.available_label";
+        inline constexpr const char* INSTRUCTION = "disk_space_dialog.instruction";
+        inline constexpr const char* CANCEL = "disk_space_dialog.cancel";
+        inline constexpr const char* CHANGE_LOCATION = "disk_space_dialog.change_location";
+        inline constexpr const char* RETRY = "disk_space_dialog.retry";
+        inline constexpr const char* SELECT_OUTPUT_LOCATION = "disk_space_dialog.select_output_location";
+    } // namespace DiskSpaceDialog
+
+    namespace FileAssociation {
+        inline constexpr const char* TITLE = "file_association.title";
+        inline constexpr const char* MESSAGE = "file_association.message";
+        inline constexpr const char* YES = "file_association.yes";
+        inline constexpr const char* NOT_NOW = "file_association.not_now";
+        inline constexpr const char* DONT_ASK = "file_association.dont_ask";
+        inline constexpr const char* SUCCESS = "file_association.success";
+        inline constexpr const char* MENU_REGISTER = "file_association.menu_register";
+        inline constexpr const char* MENU_UNREGISTER = "file_association.menu_unregister";
+    } // namespace FileAssociation
+
+} // namespace lichtfeld::Strings

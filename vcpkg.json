@@ -1,0 +1,54 @@
+{
+  "builtin-baseline": "62159a45e18f3a9ac0548628dcaf74fcb60c6ff9",
+  "dependencies": [
+    "args",
+    "boost-preprocessor",
+    "boost-regex",
+    "cgal",
+    "freetype",
+    "glad",
+    "sdl3",
+    "glm",
+    "gtest",
+    {
+      "name": "imgui",
+      "features": [
+        "docking-experimental",
+        "freetype",
+        "opengl3-binding",
+        "sdl3-binding"
+      ]
+    },
+    "implot",
+    "libarchive",
+    "openssl",
+    "sqlite3",
+    { "name": "opencv4", "default-features": false, "features": ["png", "jpeg", "ffmpeg"] },
+    { "name": "onnxruntime", "default-features": false },
+    "libwebp",
+    "nativefiledialog-extended",
+    "nlohmann-json",
+    {
+      "name": "openimageio",
+      "features": [
+        "webp"
+      ]
+    },
+    "spdlog",
+    "tbb",
+    {
+      "name": "python3",
+      "features": [
+        "extensions"
+      ]
+    },
+    "nanobind",
+    "assimp",
+    {
+      "name": "rmlui",
+      "features": [
+        "svg"
+      ]
+    }
+  ]
+}

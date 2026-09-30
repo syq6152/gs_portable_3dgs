@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "reconstruction": {
+    "workspace_root": "outputs",
+    "input_mode": "auto",
+    "retain_failed_stages": false,
+    "preprocess_only": false,
+    "write_diagnostic_json": false
+  },
+  "common": {
+    "debug_mesh_overlay": true,
+    "scan_blur_filter": false,
+    "verbose_output": true
+  },
+  "scan": {
+    "sample_limit": 200,
+    "enhance": true,
+    "denoise": false,
+    "super_resolution": true,
+    "sr_final_scale": 2
+  },
+  "registered": {
+    "triangulation": "mesh",
+    "sample_limit": 120,
+    "match_3d_threshold": 0.0004,
+    "inc_blur_filter": false,
+    "export_registration_triplets": false,
+    "register_twice": false,
+    "face_mode": false,
+    "incremental_mask": false,
+    "foreground_model": "",
+    "incremental_video": "",
+    "video_frame_count": 80
+  },
+  "mesh_export": {
+    "enhance": true,
+    "super_resolution": false,
+    "sr_final_scale": 2,
+    "match_3d_threshold": 0.0004
+  }
+}

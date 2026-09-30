@@ -1,0 +1,38 @@
+# Build caches and generated delivery packages
+/build*/
+/cmake-build*/
+/SwapTexture/
+/dist/
+*.zip
+*.zip.sha256
+
+# Local tool configuration and task state
+/.vs/
+/.vscode/
+/.idea/
+/.codex/
+/.agents/
+/.claude/
+/.planning/
+
+# Python/generated caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+src/python/stubs/lichtfeld/build_info.pyi
+
+# Local datasets, outputs and runtime logs
+/data/
+/testdata/
+/outputs/
+/results/
+*.log
+*.nsys-rep
+imgui.ini
+
+# External build/dependency caches
+/vcpkg*/
+/external/libtorch/
+/external/release/
+/external/debug/

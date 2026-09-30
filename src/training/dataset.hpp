@@ -1,0 +1,850 @@
+/* SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+#pragma once
+
+#include "core/camera.hpp"
+#include "core/logger.hpp"
+#include "core/tensor.hpp"
+#include "io/pipelined_image_loader.hpp"
+#include "training/kernels/grad_alpha.hpp" // for launch_bilinear_resize_chw
+#include <algorithm>
+#include <chrono>
+#include <condition_variable>
+#include <format>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <queue>
+#include <random>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <vector>
+
+namespace lfs::training {
+
+    /// A basic locked, blocking MPMC queue.
+    /// Every push/pop is guarded by a mutex. Condition variable is used
+    /// to communicate insertion of new elements for waiting threads.
+    template <typename T>
+    class ThreadSafeQueue {
+    public:
+        /// Push a new value to the back and notify one waiting thread
+        void push(T value) {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                queue_.push(std::move(value));
+            }
+            cv_.notify_one();
+        }
+
+        /// Pop front element, blocking until available or timeout
+        /// Returns nullopt on timeout
+        std::optional<T> pop(std::optional<std::chrono::milliseconds> timeout = std::nullopt) {
+            std::unique_lock<std::mutex> lock(mutex_);
+            if (timeout) {
+                if (!cv_.wait_for(lock, *timeout, [this] { return !queue_.empty(); })) {
+                    return std::nullopt; // Timeout
+                }
+            } else {
+                cv_.wait(lock, [this] { return !queue_.empty(); });
+            }
+
+            T value = std::move(queue_.front());
+            queue_.pop();
+            return value;
+        }
+
+        /// Empty the queue and return number of elements cleared
+        size_t clear() {
+            std::lock_guard<std::mutex> lock(mutex_);
+            const auto size = queue_.size();
+            while (!queue_.empty()) {
+                queue_.pop();
+            }
+            return size;
+        }
+
+        /// Check if empty (not thread-safe by itself, just a snapshot)
+        bool empty() const {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return queue_.empty();
+        }
+
+    private:
+        std::queue<T> queue_;
+        mutable std::mutex mutex_;
+        std::condition_variable cv_;
+    };
+
+    /// Random sampler that shuffles indices once and iterates through them
+    class RandomSampler {
+    public:
+        explicit RandomSampler(size_t size) : size_(size),
+                                              index_(0) {
+            reset();
+        }
+
+        /// Reset and shuffle indices
+        void reset(std::optional<size_t> new_size = std::nullopt) {
+            if (new_size) {
+                size_ = *new_size;
+            }
+
+            // Generate indices 0...size-1
+            indices_.resize(size_);
+            for (size_t i = 0; i < size_; ++i) {
+                indices_[i] = i;
+            }
+
+            // Shuffle using random device
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::shuffle(indices_.begin(), indices_.end(), gen);
+
+            index_ = 0;
+        }
+
+        /// Get next batch of indices
+        std::optional<std::vector<size_t>> next(size_t batch_size) {
+            if (index_ >= size_) {
+                return std::nullopt;
+            }
+
+            const size_t end = std::min(index_ + batch_size, size_);
+            std::vector<size_t> batch(indices_.begin() + index_, indices_.begin() + end);
+            index_ = end;
+
+            return batch;
+        }
+
+        size_t size() const { return size_; }
+
+    private:
+        size_t size_;
+        size_t index_;
+        std::vector<size_t> indices_;
+    };
+
+    /// Infinite random sampler - automatically resets when exhausted
+    class InfiniteRandomSampler : public RandomSampler {
+    public:
+        explicit InfiniteRandomSampler(size_t size) : RandomSampler(size) {}
+
+        std::optional<std::vector<size_t>> next(size_t batch_size) {
+            auto batch = RandomSampler::next(batch_size);
+            if (!batch) {
+                reset();
+                batch = RandomSampler::next(batch_size);
+            }
+            return batch;
+        }
+    };
+
+    /// Camera with loaded image
+    struct CameraWithImage {
+        lfs::core::Camera* camera;
+        lfs::core::Tensor image;
+
+        // --- Pyramid training support ---
+        // When pyramid training is enabled, pyramid_images stores downsampled versions
+        // of the image at different resolutions. Index 0 = coarsest level, last = finest
+        // (but NOT the full-resolution image, which is stored in 'image' above).
+        // pyramid_intrinsics[i] = {focal_x, focal_y, center_x, center_y, width, height}
+        // for the corresponding pyramid level.
+        std::vector<lfs::core::Tensor> pyramid_images;
+        std::vector<lfs::core::Tensor> pyramid_masks; // Downsampled masks [H,W] per level (only if mask present)
+        struct PyramidIntrinsics {
+            float focal_x;
+            float focal_y;
+            float center_x;
+            float center_y;
+            int width;
+            int height;
+        };
+        std::vector<PyramidIntrinsics> pyramid_intrinsics;
+    };
+
+    /// Dataset example type
+    struct CameraExample {
+        CameraWithImage data;
+        lfs::core::Tensor target;              // Empty tensor, not used
+        std::optional<lfs::core::Tensor> mask; // Optional mask [H,W], float32
+    };
+
+    /// Camera dataset configuration
+    struct DatasetConfig {
+        int resize_factor = 1;
+        int max_width = 0;
+        int test_every = 8;
+    };
+
+    /// Camera dataset - loads images from cameras
+    class CameraDataset {
+    public:
+        enum class Split {
+            TRAIN,
+            VAL,
+            ALL
+        };
+
+        CameraDataset(std::vector<std::shared_ptr<lfs::core::Camera>> cameras,
+                      const DatasetConfig& config,
+                      Split split = Split::ALL,
+                      std::optional<std::vector<std::string>> included_images = std::nullopt)
+            : cameras_(std::move(cameras)),
+              config_(config),
+              split_(split) {
+
+            // Create indices based on split
+            indices_.clear();
+            if (included_images.has_value()) {
+                for (size_t i = 0; i < cameras_.size(); ++i) {
+                    // Simple filename matching without extension
+                    auto img_name = cameras_[i]->image_name();
+                    // Remove extension
+                    auto dot_pos = img_name.find_last_of('.');
+                    if (dot_pos != std::string::npos) {
+                        img_name = img_name.substr(0, dot_pos);
+                    }
+
+                    if (std::find(included_images->begin(), included_images->end(), img_name) !=
+                        included_images->end()) {
+                        indices_.push_back(i);
+                    }
+                }
+            } else {
+                for (size_t i = 0; i < cameras_.size(); ++i) {
+                    const bool is_test = (i % config.test_every) == 0;
+
+                    if (split_ == Split::ALL || (split_ == Split::TRAIN && !is_test) ||
+                        (split_ == Split::VAL && is_test)) {
+                        indices_.push_back(i);
+                    }
+                }
+            }
+
+            LOG_INFO("Dataset created with {} images (split: {})", indices_.size(), static_cast<int>(split_));
+        }
+
+        lfs::core::Camera* get_camera(size_t index) const {
+            assert(index < indices_.size());
+            return cameras_[indices_[index]].get();
+        }
+
+        std::shared_ptr<lfs::core::Camera> get_camera_shared(size_t index) const {
+            assert(index < indices_.size());
+            return cameras_[indices_[index]];
+        }
+
+        /// Get single example by index
+        CameraExample get(size_t index) const {
+            if (index >= indices_.size()) {
+                throw std::out_of_range("Dataset index out of range");
+            }
+
+            const size_t camera_idx = indices_[index];
+            auto& cam = cameras_[camera_idx];
+
+            // Load image using the new LibTorch-free Camera
+            // 读图 + resize
+            lfs::core::Tensor image = cam->load_and_get_image(config_.resize_factor, config_.max_width);
+
+            return {
+                {cam.get(), std::move(image)},
+                lfs::core::Tensor() // Empty target
+            };
+        }
+
+        /// Get batch of examples by indices
+        std::vector<CameraExample> get_batch(const std::vector<size_t>& indices) const {
+            std::vector<CameraExample> batch;
+            batch.reserve(indices.size());
+            for (size_t idx : indices) {
+                batch.push_back(get(idx));
+            }
+            return batch;
+        }
+
+        size_t size() const { return indices_.size(); }
+
+        const std::vector<std::shared_ptr<lfs::core::Camera>>& get_cameras() const { return cameras_; }
+
+        /// Append additional cameras (e.g. pseudo views) to this dataset and include
+        /// them in the active sampling indices regardless of split, so callers can
+        /// inject synthesized views directly into the train split.
+        void append_cameras(std::vector<std::shared_ptr<lfs::core::Camera>> extra) {
+            cameras_.reserve(cameras_.size() + extra.size());
+            for (auto& cam : extra) {
+                if (!cam) {
+                    continue;
+                }
+                indices_.push_back(cameras_.size());
+                cameras_.push_back(std::move(cam));
+            }
+        }
+
+        Split get_split() const { return split_; }
+
+        size_t get_num_bytes() const {
+            if (cameras_.empty()) {
+                return 0;
+            }
+            size_t total_bytes = 0;
+            for (const auto& cam : cameras_) {
+                total_bytes +=
+                    cam->get_num_bytes_from_file(config_.resize_factor, config_.max_width);
+            }
+            return total_bytes;
+        }
+
+        [[nodiscard]] std::optional<lfs::core::Camera*> get_camera_by_filename(
+            const std::string& filename) const {
+            for (const auto& cam : cameras_) {
+                if (cam->image_name() == filename) {
+                    return cam.get();
+                }
+            }
+            return std::nullopt;
+        }
+
+        void set_resize_factor(int resize_factor) { config_.resize_factor = resize_factor; }
+        void set_max_width(int max_width) { config_.max_width = max_width; }
+
+        int get_resize_factor() const { return config_.resize_factor; }
+        int get_max_width() const { return config_.max_width; }
+
+        /// Returns fraction of non-JPEG images (0.0 = all JPEG, 1.0 = none)
+        [[nodiscard]] float get_non_jpeg_ratio() const {
+            if (cameras_.empty())
+                return 0.0f;
+            const auto count = std::count_if(cameras_.begin(), cameras_.end(), [](const auto& cam) {
+                auto ext = cam->image_path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                return ext != ".jpg" && ext != ".jpeg";
+            });
+            return static_cast<float>(count) / static_cast<float>(cameras_.size());
+        }
+
+    private:
+        std::vector<std::shared_ptr<lfs::core::Camera>> cameras_;
+        DatasetConfig config_;
+        Split split_;
+        std::vector<size_t> indices_;
+    };
+
+    /// Options for configuring DataLoader
+    struct DataLoaderOptions {
+        size_t batch_size = 1;
+        size_t num_workers = 0;
+        size_t max_jobs = 0; // 0 means 2 * num_workers
+        std::optional<std::chrono::milliseconds> timeout = std::nullopt;
+        bool enforce_ordering = true;
+        bool drop_last = false;
+    };
+
+    /// DataLoader - multi-threaded data loading with prefetching
+    template <typename Sampler>
+    class DataLoader {
+    public:
+        using BatchType = std::vector<CameraExample>;
+
+        DataLoader(std::shared_ptr<CameraDataset> dataset,
+                   Sampler sampler,
+                   DataLoaderOptions options)
+            : dataset_(dataset),
+              sampler_(std::move(sampler)),
+              options_(options),
+              sequence_number_(0),
+              in_flight_jobs_(0),
+              shutdown_(false) {
+
+            // Set max_jobs default
+            if (options_.max_jobs == 0) {
+                options_.max_jobs = std::max<size_t>(2 * options_.num_workers, 2);
+            }
+
+            // Start worker threads
+            for (size_t i = 0; i < options_.num_workers; ++i) {
+                workers_.emplace_back([this] { worker_thread(); });
+            }
+
+            // Prefetch initial jobs
+            prefetch(options_.max_jobs);
+        }
+
+        ~DataLoader() {
+            shutdown();
+        }
+
+        // Disable copying and moving
+        DataLoader(const DataLoader&) = delete;
+        DataLoader& operator=(const DataLoader&) = delete;
+        DataLoader(DataLoader&&) = delete;
+        DataLoader& operator=(DataLoader&&) = delete;
+
+        /// Get next batch (blocking)
+        std::optional<BatchType> next() {
+            if (options_.num_workers > 0) {
+                // Multi-threaded path
+                while (auto result = pop_result()) {
+                    if (result->exception) {
+                        std::rethrow_exception(result->exception);
+                    } else if (result->batch) {
+                        prefetch(1); // Keep pipeline full
+                        return std::move(result->batch);
+                    }
+                }
+            } else {
+                // Single-threaded path
+                auto indices = sampler_.next(options_.batch_size);
+                if (!indices || (indices->size() < options_.batch_size && options_.drop_last)) {
+                    return std::nullopt;
+                }
+                return dataset_->get_batch(*indices);
+            }
+            return std::nullopt;
+        }
+
+        /// Reset the dataloader for new epoch
+        void reset() {
+            drain();
+            sampler_.reset();
+            sequence_number_ = 0;
+            prefetch(options_.max_jobs);
+        }
+
+        /// Shutdown worker threads
+        void shutdown() {
+            if (shutdown_) {
+                return;
+            }
+            shutdown_ = true;
+
+            drain();
+
+            // Send quit signal to all workers
+            for (size_t i = 0; i < options_.num_workers; ++i) {
+                Job quit_job;
+                quit_job.quit = true;
+                quit_job.sequence_number = sequence_number_++;
+                job_queue_.push(std::move(quit_job));
+            }
+
+            // Join all workers
+            for (auto& worker : workers_) {
+                if (worker.joinable()) {
+                    worker.join();
+                }
+            }
+        }
+
+        size_t in_flight_jobs() const { return in_flight_jobs_; }
+
+    private:
+        struct Job {
+            size_t sequence_number = 0;
+            std::optional<std::vector<size_t>> indices;
+            bool quit = false;
+        };
+
+        struct Result {
+            size_t sequence_number = 0;
+            std::optional<BatchType> batch;
+            std::exception_ptr exception;
+        };
+
+        /// Worker thread function
+        void worker_thread() {
+            while (true) {
+                auto job_opt = job_queue_.pop();
+                if (!job_opt) {
+                    continue; // Spurious wakeup
+                }
+
+                Job job = std::move(*job_opt);
+
+                if (job.quit) {
+                    break;
+                }
+
+                try {
+                    auto batch = dataset_->get_batch(*job.indices);
+
+                    Result result;
+                    result.sequence_number = job.sequence_number;
+                    result.batch = std::move(batch);
+                    result_queue_.push(std::move(result));
+                } catch (...) {
+                    Result result;
+                    result.sequence_number = job.sequence_number;
+                    result.exception = std::current_exception();
+                    result_queue_.push(std::move(result));
+                }
+            }
+        }
+
+        /// Prefetch n jobs
+        void prefetch(size_t n) {
+            for (size_t i = 0; i < n; ++i) {
+                auto indices = sampler_.next(options_.batch_size);
+                if (!indices || (indices->size() < options_.batch_size && options_.drop_last)) {
+                    break;
+                }
+
+                Job job;
+                job.sequence_number = sequence_number_++;
+                job.indices = std::move(indices);
+
+                job_queue_.push(std::move(job));
+                ++in_flight_jobs_;
+            }
+        }
+
+        /// Pop result from queue
+        std::optional<Result> pop_result() {
+            if (in_flight_jobs_ == 0) {
+                return std::nullopt;
+            }
+
+            auto result_opt = result_queue_.pop(options_.timeout);
+            if (result_opt) {
+                --in_flight_jobs_;
+                return result_opt;
+            }
+
+            return std::nullopt;
+        }
+
+        /// Drain all pending jobs
+        void drain() {
+            // Clear pending jobs
+            const size_t cleared = job_queue_.clear();
+            in_flight_jobs_ -= cleared;
+
+            // Wait for in-flight jobs to complete
+            while (in_flight_jobs_ > 0) {
+                pop_result();
+            }
+        }
+
+        std::shared_ptr<CameraDataset> dataset_;
+        Sampler sampler_;
+        DataLoaderOptions options_;
+
+        size_t sequence_number_;
+        std::atomic<size_t> in_flight_jobs_;
+
+        std::vector<std::thread> workers_;
+        ThreadSafeQueue<Job> job_queue_;
+        ThreadSafeQueue<Result> result_queue_;
+
+        bool shutdown_;
+    };
+
+    /// Configuration for pyramid (coarse-to-fine) training in PipelinedDataLoader.
+    /// When enabled, each loaded image is GPU-downsampled into multiple pyramid levels.
+    /// The full-resolution image is always stored in CameraWithImage::image;
+    /// downsampled versions go into CameraWithImage::pyramid_images (index 0 = coarsest).
+    struct PyramidConfig {
+        bool enabled = false;
+        int levels = 3;          // Total levels including full resolution
+        // Downsample factors relative to full resolution (computed at construction).
+        // E.g. for levels=3: factors = {4, 2} (coarsest first, full res excluded).
+        std::vector<int> downsample_factors;
+
+        /// Compute downsample factors based on level count.
+        /// Level 0 (coarsest) has factor 2^(levels-1), last has factor 2, full res excluded.
+        void compute_factors() {
+            downsample_factors.clear();
+            for (int i = levels - 1; i >= 1; --i) {
+                downsample_factors.push_back(1 << i);
+            }
+        }
+    };
+
+    /// Configuration for mask loading in PipelinedDataLoader
+    struct PipelinedMaskConfig {
+        bool load_masks = false;        // Whether to load masks alongside images
+        bool invert_masks = false;      // Invert mask values (1.0 - mask)
+        float mask_threshold = 0.0f;    // If > 0, values >= threshold become 1.0
+        bool use_alpha_as_mask = false; // Extract alpha channel from RGBA as mask
+    };
+
+    // Pipelined DataLoader with GPU batch JPEG decoding
+    // 从这里读图
+    template <typename Sampler>
+    class PipelinedDataLoader {
+    public:
+        using BatchType = std::vector<CameraExample>;
+
+        PipelinedDataLoader(std::shared_ptr<CameraDataset> dataset,
+                            Sampler sampler,
+                            lfs::io::PipelinedLoaderConfig config = {},
+                            PipelinedMaskConfig mask_config = {},
+                            PyramidConfig pyramid_config = {})
+            : dataset_(dataset),
+              sampler_(std::move(sampler)),
+              config_(config),
+              mask_config_(mask_config),
+              pyramid_config_(pyramid_config),
+              loader_(std::make_shared<lfs::io::PipelinedImageLoader>(config)),
+              shutdown_(false) {
+
+            // Prefetch initial batch
+            prefetch_next_batch();
+        }
+
+        ~PipelinedDataLoader() {
+            shutdown();
+        }
+
+        PipelinedDataLoader(const PipelinedDataLoader&) = delete;
+        PipelinedDataLoader& operator=(const PipelinedDataLoader&) = delete;
+
+        std::optional<CameraExample> next() {
+            if (shutdown_)
+                return std::nullopt;
+            prefetch_next_batch();
+
+            try {
+                auto ready = loader_->get(); // 在这里读图
+                const auto it = sequence_to_camera_.find(ready.sequence_id);
+                if (it == sequence_to_camera_.end()) {
+                    LOG_ERROR("[PipelinedDataLoader] Unknown sequence_id: {}", ready.sequence_id);
+                    return std::nullopt;
+                }
+                const size_t camera_idx = it->second;
+                sequence_to_camera_.erase(it);
+
+                auto& cam = dataset_->get_cameras()[camera_idx];
+                const auto shape = ready.tensor.shape();
+                cam->set_image_dimensions(static_cast<int>(shape[2]), static_cast<int>(shape[1])); // 在这改内参
+
+                CameraExample example{
+                    CameraWithImage{cam.get(), std::move(ready.tensor)},
+                    lfs::core::Tensor(),
+                    std::nullopt};
+
+                // --- Pyramid training: build downsampled versions on GPU ---
+                if (pyramid_config_.enabled && !pyramid_config_.downsample_factors.empty()) {
+                    // Use intrinsics effective at the already-resized base image (-r/max_width applied).
+                    // Pyramid levels are computed relative to this base resolution.
+                    const auto [base_fx, base_fy, base_cx, base_cy] = cam->get_intrinsics();
+
+                    // Pass mask tensor pointer if mask was loaded (will be downsampled per level)
+                    const lfs::core::Tensor* mask_ptr =
+                        (ready.mask && ready.mask->is_valid()) ? &(*ready.mask) : nullptr;
+                    build_pyramid(example.data, base_fx, base_fy,
+                                  base_cx, base_cy, mask_ptr);
+                }
+
+                // Attach mask if present
+                if (ready.mask && ready.mask->is_valid()) {
+                    example.mask = std::move(*ready.mask);
+                }
+
+                return example;
+            } catch (const std::exception& e) {
+                LOG_ERROR("[PipelinedDataLoader] Error: {}", e.what());
+                return std::nullopt;
+            }
+        }
+
+        void reset() {
+            loader_->clear();
+            sampler_.reset();
+            sequence_to_camera_.clear();
+            next_sequence_id_ = 0;
+            prefetch_next_batch();
+        }
+
+        void shutdown() {
+            if (shutdown_)
+                return;
+            shutdown_ = true;
+            loader_->shutdown();
+        }
+
+        auto get_stats() const { return loader_->get_stats(); }
+
+        lfs::io::PipelinedImageLoader* get_loader() const { return loader_.get(); }
+        std::shared_ptr<lfs::io::PipelinedImageLoader> get_loader_shared() const { return loader_; }
+
+        std::vector<lfs::core::Camera*> snapshot_prefetched_cameras() const {
+            std::vector<lfs::core::Camera*> cameras;
+            cameras.reserve(sequence_to_camera_.size());
+            const auto& dataset_cameras = dataset_->get_cameras();
+            for (const auto& [_, camera_idx] : sequence_to_camera_) {
+                if (camera_idx >= dataset_cameras.size()) {
+                    continue;
+                }
+                auto* cam = dataset_cameras[camera_idx].get();
+                if (cam) {
+                    cameras.push_back(cam);
+                }
+            }
+            return cameras;
+        }
+
+    private:
+        /// Build pyramid downsampled images (and optionally masks) for CameraWithImage
+        /// using GPU bilinear resize.
+        /// Populates pyramid_images, pyramid_intrinsics, and pyramid_masks.
+        /// The full-resolution image/mask stays unchanged.
+        void build_pyramid(CameraWithImage& data,
+                           float base_fx, float base_fy,
+                           float base_cx, float base_cy,
+                           const lfs::core::Tensor* mask = nullptr) {
+            const auto& shape = data.image.shape(); // [C, H, W]
+            const int C = static_cast<int>(shape[0]);
+            const int H = static_cast<int>(shape[1]);
+            const int W = static_cast<int>(shape[2]);
+
+            data.pyramid_images.clear();
+            data.pyramid_intrinsics.clear();
+            data.pyramid_masks.clear();
+            data.pyramid_images.reserve(pyramid_config_.downsample_factors.size());
+            data.pyramid_intrinsics.reserve(pyramid_config_.downsample_factors.size());
+            if (mask) {
+                data.pyramid_masks.reserve(pyramid_config_.downsample_factors.size());
+            }
+
+            for (const int factor : pyramid_config_.downsample_factors) {
+                const int dst_H = std::max(1, H / factor);
+                const int dst_W = std::max(1, W / factor);
+                const float scale = 1.0f / static_cast<float>(factor);
+
+                // Downsample image [C, H, W] → [C, dst_H, dst_W]
+                auto dst = lfs::core::Tensor::empty(
+                    {static_cast<size_t>(C),
+                     static_cast<size_t>(dst_H),
+                     static_cast<size_t>(dst_W)},
+                    lfs::core::Device::CUDA,
+                    lfs::core::DataType::Float32);
+
+                lfs::training::kernels::launch_bilinear_resize_chw(
+                    data.image.ptr<float>(),
+                    dst.ptr<float>(),
+                    C, H, W, dst_H, dst_W);
+
+                data.pyramid_images.push_back(std::move(dst));
+                data.pyramid_intrinsics.push_back({
+                    base_fx * scale,
+                    base_fy * scale,
+                    base_cx * scale,
+                    base_cy * scale,
+                    dst_W,
+                    dst_H,
+                });
+
+                // Downsample mask [H, W] → [dst_H, dst_W] (treat as [1, H, W] for CHW kernel)
+                if (mask) {
+                    const auto& ms = mask->shape(); // [H, W]
+                    const int mH = static_cast<int>(ms[0]);
+                    const int mW = static_cast<int>(ms[1]);
+                    const int mdH = std::max(1, mH / factor);
+                    const int mdW = std::max(1, mW / factor);
+
+                    auto mask_dst = lfs::core::Tensor::empty(
+                        {static_cast<size_t>(1),
+                         static_cast<size_t>(mdH),
+                         static_cast<size_t>(mdW)},
+                        lfs::core::Device::CUDA,
+                        lfs::core::DataType::Float32);
+
+                    lfs::training::kernels::launch_bilinear_resize_chw(
+                        mask->ptr<float>(),
+                        mask_dst.ptr<float>(),
+                        1, mH, mW, mdH, mdW);
+
+                    // Squeeze [1, mdH, mdW] → [mdH, mdW] to match expected mask shape
+                    data.pyramid_masks.push_back(mask_dst.reshape({mdH, mdW}));
+                }
+            }
+        }
+        void prefetch_next_batch() {
+            while (loader_->in_flight_count() < config_.prefetch_count) {
+                const auto indices = sampler_.next(1);
+                if (!indices || indices->empty())
+                    break;
+
+                const size_t camera_idx = (*indices)[0];
+                auto& cam = dataset_->get_cameras()[camera_idx];
+                const size_t seq_id = next_sequence_id_++;
+                sequence_to_camera_[seq_id] = camera_idx;
+
+                lfs::io::ImageRequest request;
+                request.sequence_id = seq_id;
+                request.path = cam->image_path();
+                request.params.resize_factor = dataset_->get_resize_factor();
+                request.params.max_width = dataset_->get_max_width();
+                if (cam->is_undistort_prepared()) {
+                    request.undistort = &cam->undistort_params();
+                    request.params.undistort = request.undistort;
+                }
+
+                if (mask_config_.use_alpha_as_mask && cam->has_alpha()) {
+                    request.extract_alpha_as_mask = true;
+                    request.alpha_mask_params.invert = mask_config_.invert_masks;
+                    request.alpha_mask_params.threshold = mask_config_.mask_threshold;
+                } else if (mask_config_.load_masks && cam->has_mask()) {
+                    request.mask_path = cam->mask_path();
+                    request.mask_params.invert = mask_config_.invert_masks;
+                    request.mask_params.threshold = mask_config_.mask_threshold;
+                }
+
+                loader_->prefetch({request});
+            }
+        }
+
+        std::shared_ptr<CameraDataset> dataset_;
+        Sampler sampler_;
+        lfs::io::PipelinedLoaderConfig config_;
+        PipelinedMaskConfig mask_config_;
+        PyramidConfig pyramid_config_;
+        std::shared_ptr<lfs::io::PipelinedImageLoader> loader_;
+
+        std::unordered_map<size_t, size_t> sequence_to_camera_;
+        size_t next_sequence_id_ = 0;
+
+        bool shutdown_ = false;
+    };
+
+    template <typename SamplerType = RandomSampler>
+    inline auto create_dataloader_from_dataset(std::shared_ptr<CameraDataset> dataset,
+                                               int num_workers = 4) {
+        const size_t dataset_size = dataset->size();
+        DataLoaderOptions options;
+        options.batch_size = 1;
+        options.num_workers = num_workers;
+        options.enforce_ordering = false;
+        return std::make_unique<DataLoader<SamplerType>>(
+            dataset, SamplerType(dataset_size), options);
+    }
+
+    inline auto create_infinite_dataloader_from_dataset(std::shared_ptr<CameraDataset> dataset,
+                                                        int num_workers = 4) {
+        return create_dataloader_from_dataset<InfiniteRandomSampler>(dataset, num_workers);
+    }
+
+    template <typename SamplerType = RandomSampler>
+    inline auto create_pipelined_dataloader(std::shared_ptr<CameraDataset> dataset,
+                                            lfs::io::PipelinedLoaderConfig config = {},
+                                            PipelinedMaskConfig mask_config = {},
+                                            PyramidConfig pyramid_config = {}) {
+        const size_t dataset_size = dataset->size();
+        return std::make_unique<PipelinedDataLoader<SamplerType>>(
+            dataset, SamplerType(dataset_size), config, mask_config, pyramid_config);
+    }
+
+    inline auto create_infinite_pipelined_dataloader(std::shared_ptr<CameraDataset> dataset,
+                                                     lfs::io::PipelinedLoaderConfig config = {},
+                                                     PipelinedMaskConfig mask_config = {},
+                                                     PyramidConfig pyramid_config = {}) {
+        return create_pipelined_dataloader<InfiniteRandomSampler>(dataset, config, mask_config, pyramid_config);
+    }
+
+} // namespace lfs::training
