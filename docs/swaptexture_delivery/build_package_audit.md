@@ -40,7 +40,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build_swaptextur
 | 参数 | 默认值 | 作用 |
 |---|---|---|
 | `Strategy` | `igs+` | 选择 `igs+`、`mcmc` 或 `adc` 的六个正式训练配置。 |
-| `Parallel` | `2` | CMake 构建并发，允许 1–64。 |
+| `Parallel` | `8` | CMake 构建并发，允许 1–64。 |
 | `VcpkgConcurrency` | `1` | vcpkg 构建并发，允许 1–64。 |
 | `BuildOnly` | 关闭 | 构建后结束，保留本次工作目录。 |
 | `SkipTests` | 关闭 | 跳过开发测试；没有 `tests/python` 时自动提示并跳过。 |
@@ -120,7 +120,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\update_swaptextu
 
 `scripts/swaptexture_m6_package_verify.py` 是当前交付使用的文件校验器。它检查产品 manifest、七个密文配置、provider 的文件集合及哈希、包外安装清单、依赖清单和禁止进入运行包的材料。
 
-`scripts/check_portable_startup.py` 将 PATH 限制到包根目录和 Windows 系统目录，再从包目录执行 `SwapTexture.exe --version`，检查真实程序是否能加载依赖。完整交付在 staging 和发布后分别运行该检查。
+`scripts/check_portable_startup.py` 将 PATH 限制到包根目录和 Windows 系统目录，再从包目录执行 `SwapTexture.exe --version`，检查真实程序是否能加载依赖，并核对输出是否为包内 `manifest.json` 对应的 `Swaptexture v<packageVersion>`。完整交付在 staging 和发布后分别运行该检查。
 
 单独检查已有包能否启动：
 

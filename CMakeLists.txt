@@ -61,6 +61,20 @@ file(WRITE "${CMAKE_BINARY_DIR}/include/git_version.h"
 #define GIT_TAGGED_VERSION \"${GIT_TAGGED_VERSION}\"\n"
 )
 
+# Embed the product version and regenerate when the source manifest changes.
+set(LFS_PRODUCT_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/resources/swaptexture_configs/manifest.json")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LFS_PRODUCT_MANIFEST}")
+file(READ "${LFS_PRODUCT_MANIFEST}" _lfs_product_manifest)
+string(JSON LFS_SWAPTEXTURE_PACKAGE_VERSION GET "${_lfs_product_manifest}" extension packageVersion)
+if(NOT LFS_SWAPTEXTURE_PACKAGE_VERSION MATCHES "^[0-9]+[.][0-9]+[.][0-9]+$")
+    message(FATAL_ERROR "manifest.json extension.packageVersion must have the form x.xx.xx")
+endif()
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/package_version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/package_version.h"
+    @ONLY
+)
+
 # Setup
 get_filename_component(PROJ_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
 

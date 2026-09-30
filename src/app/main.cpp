@@ -10,6 +10,7 @@
 #include "core/logger.hpp"
 #include "core/path_utils.hpp"
 #include "git_version.h"
+#include "package_version.h"
 #include "python/plugin_runner.hpp"
 #include "python/runner.hpp"
 
@@ -58,7 +59,7 @@ int main(int argc, char* argv[]) {
         if constexpr (std::is_same_v<T, lfs::core::args::HelpMode>) {
             return 0;
         } else if constexpr (std::is_same_v<T, lfs::core::args::VersionMode>) {
-            std::println("LichtFeld Studio {} ({})", GIT_TAGGED_VERSION, GIT_COMMIT_HASH_SHORT);
+            std::println("Swaptexture v{}", LFS_SWAPTEXTURE_PACKAGE_VERSION);
             return 0;
         } else if constexpr (std::is_same_v<T, lfs::core::args::WarmupMode>) {
             return 0;

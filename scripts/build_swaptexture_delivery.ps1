@@ -17,9 +17,9 @@ param(
     [ValidateSet('igs+', 'mcmc', 'adc')]
     [string]$Strategy = 'igs+',
     [ValidateRange(1, 64)]
-    [int]$Parallel = 2,
+    [int]$Parallel = 8,
     [ValidateRange(1, 64)]
-    [int]$VcpkgConcurrency = 1,
+    [int]$VcpkgConcurrency = 8,
 
     [string]$PublishDirectory = '',
     [string]$ArtifactDirectory = '',

@@ -1,88 +1,167 @@
 # GS Portable
 
-用于 Windows 的 SwapTexture 原生前处理与 3D Gaussian Splatting 训练源码工作区。前处理由原 Python SwapTexture 流程迁移为 C++，随后在同一进程执行 LichtFeld 3DGS 训练；正常运行无需原 `swaptexture/main.py` 工程。
+## 1. 工程简介
 
-本目录保留现有源码相对路径，移除了研究资料、历史包、开发测试、构建缓存和日志。构建目标仍叫 `Run-GS`，生成的程序名为 **`SwapTexture.exe`**。
+GS Portable 是面向 Windows x64 的 C++ / CUDA 命令行工程，用于扫描数据前处理、增量图像注册和 3D Gaussian Splatting（3DGS）训练。程序读取 scanner `texture_data.bin` 及关联数据，完成图像处理、相机与几何数据准备，并可在同一进程中执行训练，输出 Gaussian PLY。
 
-## 目录
+主要支持两种输入流程：
 
-| 路径 | 用途 |
+- **registered**：结合扫描数据与增量图片，完成注册、数据准备和可选的 GS 训练；增量图片也可通过配置中的视频抽帧提供。
+- **scan**：仅使用扫描数据准备训练输入，无需增量图片。
+
+训练支持 `igs+`、`mcmc`、`adc` 三套策略配置，每套包含两种输入源和 `fast`、`medium`、`quality` 三个档位。策略在构建打包时选择，输入源和档位在运行时选择。
+
+CMake 构建目标为 `Run-GS`，输出程序为 **`SwapTexture.exe`**。分发包包含运行 DLL、七个加密配置，以及 COLMAP 和超分辅助程序。运行时请整体复制 `SwapTexture` 目录。
+
+## 2. 编译构建
+
+### 2.1 环境要求
+
+请先参考 [Windows 构建指南](https://github.com/MrNeRF/LichtFeld-Studio/wiki/Build-Instructions-%E2%80%90-Windows)的 **Step 1、Step 2**，安装并验证 Visual Studio 2022 C++ 工具链和 CUDA Toolkit，并确保 NVIDIA 驱动满足下表要求。完成环境准备后，按本文的构建命令编译本工程。
+
+| 组件 | 要求 |
 |---|---|
-| `src/app`、`src/preprocessing` | 命令行入口、前处理及训练编排 |
-| `src/core`、`src/io`、`src/geometry`、`src/training` | 共享基础设施、数据读写、几何和 3DGS 训练 |
-| `src/rendering` 及其余 `src` 模块 | mesh2splat、着色器及保留的原生源码/头文件；部分模块不参与当前交付构建 |
-| `cmake`、`CMakeLists.txt` | 编译、配置加密、运行依赖收集与安装 |
-| `external` | 第三方源码和头文件，沿用原路径 |
-| `third_party/runtime` | 前处理需要的 COLMAP、超分程序、哈希清单和来源记录 |
-| `resources/swaptexture_configs` | 当前正式配置：融合参数、18 个训练 preset 和产品 manifest |
-| `scripts` | 构建分发、配置更新、加密、包校验及启动检查 |
-| `.github/overlays` | vcpkg 清单引用的 overlay；不含 CI workflow |
-| `docs/swaptexture_delivery` | 参数、构建分发、源码映射及迁移说明 |
+| 操作系统 | Windows x64 |
+| C++ 工具链 | Visual Studio 2022 Community，安装 C++ 桌面开发组件和 Windows SDK |
+| 构建工具 | CMake 3.30+、Ninja |
+| CUDA | CUDA Toolkit 12.8+、兼容的 NVIDIA GPU；当前 CMake 检查驱动版本不低于 570 |
+| Python | Python 3.11+，用于配置加密和包校验；默认使用 conda base |
+| 依赖管理 | 已准备好的 vcpkg checkout 和 `vcpkg.exe`，依赖由根目录 `vcpkg.json` 声明 |
 
-保留完整 `src` 是为了维持头文件依赖和模块结构；精简工作区仍以现有原生交付目标为入口，不包含 GUI 构建配套文档及测试套件。构建所需的许可证和第三方来源记录保留在源码中。
+构建脚本默认使用以下路径：
 
-## 构建与分发
+- Visual Studio：`C:\Program Files\Microsoft Visual Studio\2022\Community`，使用其中的 MSVC、CMake 和 Ninja。
+- Python：`C:\Users\shiboke\AppData\Local\anaconda3\python.exe`。
+- vcpkg：工程同级的 `..\vcpkg`。
 
-项目要求 Windows x64、Visual Studio 2022 Community C++ 工具链、CMake 3.30+、Ninja、CUDA Toolkit 12.8+ 及匹配的 NVIDIA 驱动。以下版本要求来自当前 CMake。构建脚本默认使用：
+如果本机安装位置不同，可通过 `-VsDevCmd`、`-CMakeExe`、`-NinjaExe`、`-PythonExe` 和 `-VcpkgRoot` 指定路径。首次构建需要下载或恢复 vcpkg 依赖。
 
-- VS：`C:\Program Files\Microsoft Visual Studio\2022\Community`
-- Python：`C:\Users\shiboke\AppData\Local\anaconda3\python.exe`（包校验器要求 Python 3.11+）
-- vcpkg：工作区同级的 `..\vcpkg`，即本机 `C:\Users\shiboke\repos\vcpkg`
+### 2.2 完整构建与打包
 
-在 **CMD** 中运行；脚本会自动初始化 VS 开发环境。首次构建需要下载/编译 vcpkg 依赖，可能耗时较长。这个源码副本不携带旧的 CMake 缓存或已生成的安装包。
+在 **CMD** 中进入工程根目录执行，脚本会自动初始化 VS x64 开发环境：
 
 ```bat
 cd /d C:\Users\shiboke\repos\gs_portable
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build_swaptexture_delivery.ps1 -Strategy igs+
 ```
 
-该命令配置并编译 Release，生成七个加密配置，安装到新 staging，执行包完整性审计和受限 PATH 启动检查，然后发布到 `SwapTexture`。本工作区未迁入 `tests`，脚本会明确跳过开发单元测试；包审计和启动检查仍照常执行。
+该命令依次安装依赖、配置 Release / Ninja、编译程序、生成七个加密配置、安装分发包、校验文件和依赖哈希，并在发布前后执行受限 PATH 的真实程序启动检查。成功后生成 `SwapTexture\SwapTexture.exe`。
+
+当前构建启用 `BUILD_PORTABLE=ON` 和 CUDA PTX，关闭 CLI 帮助输出。工程不包含开发测试套件，脚本会明确跳过开发单元测试；包审计和启动检查仍然执行。
+
+其他常用构建方式：
 
 ```bat
-rem 仅编译，不生成分发包
+rem 仅编译，不安装、打包或执行分发包检查
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build_swaptexture_delivery.ps1 -Strategy igs+ -BuildOnly
 
-rem 选择 MCMC，并生成 ZIP
+rem 使用 MCMC 配置，并额外生成 ZIP
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build_swaptexture_delivery.ps1 -Strategy mcmc -Archive
+
+rem 使用 ADC 配置
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build_swaptexture_delivery.ps1 -Strategy adc
 ```
 
-`-Strategy` 支持 `igs+`、`mcmc`、`adc`。默认每个策略保留独立缓存 `build-swaptexture-work/<策略>/build`（`igs+` 对应 `igsplus`）。成功分发后清理本轮 staging，保留构建缓存。完整参数见[构建分发说明](docs/swaptexture_delivery/build_package_audit.md)。
+| 构建参数 | 默认值或作用 |
+|---|---|
+| `-Strategy` | `igs+`；可选 `igs+`、`mcmc`、`adc`。目前请先选择 `igs+` 策略。 |
+| `-Parallel` | 编译并发数，默认 `8` |
+| `-VcpkgConcurrency` | vcpkg 构建并发数，默认 `8` |
+| `-BuildOnly` | 仅构建，不执行安装和包验证 |
+| `-PublishDirectory` | 分发目录，默认工程根目录下的 `SwapTexture` |
+| `-Archive` | 额外生成 ZIP 和 SHA-256 文件 |
+| `-ArtifactDirectory` | ZIP 输出目录，默认 `build-swaptexture-artifacts` |
 
-## 配置更新
+各策略的构建缓存独立保存在 `build-swaptexture-work/<策略>/build`，其中 `igs+` 的目录名为 `igsplus`。重复执行会复用缓存；完整交付成功后清理本轮 staging，保留构建缓存和最终包。详细流程见[构建分发说明](docs/swaptexture_delivery/build_package_audit.md)。
 
-修改 `resources/swaptexture_configs/swaptexture_params.json` 设置前处理；修改 `eval` 下对应策略的 `{inc,scan}_{fast,medium,quality}` 六个 JSON 设置训练。配置内容沿用迁移时工作区版本；JSON 内 `_run_command` 等说明字段可能保留旧程序名，实际命令以本文为准。
+## 3. 运行参数
 
-已有 `SwapTexture` 分发包时，单独更新配置无需重新编译 C++：
+### 3.1 命令行参数
+
+以下参数直接放在 `SwapTexture.exe` 后，无需添加子命令。建议输入和输出路径使用绝对路径，并用双引号包裹。
+
+| 参数 | 默认值 / 必填 | 说明 |
+|---|---|---|
+| `--bin_path <file>` | 必填 | scanner `texture_data.bin` 路径；同时保留其引用的图像、mesh 等关联文件 |
+| `--images_inc_path <dir>` | registered 输入需要 | 增量图片目录；配置了增量视频时可由视频输入替代，scan 无需此参数 |
+| `--enable_gs_train` | 默认关闭 | 传入此开关后，在前处理完成后执行 GS 训练；不附带 `true/false` 值 |
+| `--gs-input-source registered\|scan` | `registered` | 选择输入源；需与融合配置中固定的输入模式一致 |
+| `--gs-training-mode fast\|medium\|quality` | `medium` | 选择当前包内策略的训练档位 |
+| `--result_path <path>` | 可选 | 训练时必须为 `.ply` 文件路径；仅前处理时为工作目录。省略时使用配置工作目录内的输出 |
+| `--log_path <dir-or-log>` | 包内 `bin/outputs` | 指定日志目录；若传入 `.log` 文件路径，则使用其父目录 |
+| `--mesh-init-gs-scene <mesh>` | 无需传入 | 此重建入口接受但忽略其值，初始化 mesh 根据 scanner bin 的引用和回退路径自动解析 |
+| `--enable_inc_sim3_registration` | 不支持 | 当前会返回 `UnsupportedFeature`，请勿启用 |
+
+发布构建关闭 `-h/--help` 输出。可单独执行 `SwapTexture\SwapTexture.exe --version` 查看版本，格式为 `Swaptexture v<packageVersion>`。版本取自 `resources/swaptexture_configs/manifest.json` 的 `extension.packageVersion`，修改后需重新构建。更多配置字段和直接训练入口见[参数说明](docs/swaptexture_delivery/parameter_audit.md)。
+
+### 3.2 运行示例
+
+以下命令在工程根目录执行。
+
+**registered 前处理，不训练：**
 
 ```bat
-rem 只更新前处理配置
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\update_swaptexture_delivery_configs.ps1 -ConfigPath resources\swaptexture_configs\swaptexture_params.json
-
-rem 更新当前策略全部七个配置
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\update_swaptexture_delivery_configs.ps1 -All -Strategy igs+
-```
-
-可以用 `-PackageDirectory "D:\delivery\SwapTexture"` 指定包根目录，以 `-WhatIf` 预览。策略应与目标包一致。脚本先校验所选策略全部七个输入，再替换选中的 BIN；更新后旧审计哈希失效，正式分发时重新执行完整构建分发流程。
-
-## 运行
-
-构建发布后的目录以 `SwapTexture\SwapTexture.exe` 为入口，DLL 与主程序同目录，运行配置、着色器和辅助程序位于包内 `bin`。请整体复制分发包。
-
-```bat
-rem 前处理，不训练
 SwapTexture\SwapTexture.exe --bin_path "D:\input\texture_data.bin" --images_inc_path "D:\input\images_inc" --result_path "D:\output\registered"
+```
 
-rem registered 前处理并训练
+**registered 前处理并训练：**
+
+```bat
 SwapTexture\SwapTexture.exe --bin_path "D:\input\texture_data.bin" --images_inc_path "D:\input\images_inc" --enable_gs_train --gs-input-source registered --gs-training-mode medium --result_path "D:\output\Gaussian.ply"
+```
 
-rem scan-only 前处理并训练
+**scan 前处理并训练：**
+
+```bat
 SwapTexture\SwapTexture.exe --bin_path "D:\input\texture_data.bin" --enable_gs_train --gs-input-source scan --gs-training-mode medium --result_path "D:\output\Gaussian.ply"
 ```
 
-训练 mesh 由 scanner bin 引用及回退路径自动解析；保留对应输入文件。训练时 `--result_path` 是 `.ply` 文件，不训练时是目录。启用增量前景 mask 需另行提供配置指定的 ONNX 模型。Release 分发关闭 CLI 帮助输出，参数以[参数说明](docs/swaptexture_delivery/parameter_audit.md)为准。
+部分训练参数可以放在 `--` 后覆盖，例如在训练命令末尾添加 `-- --iter 2` 做两步调用检查。这需要同时传入 `--enable_gs_train`，且禁止覆盖流程管理的 dataset、output、config、strategy 和 mesh-init 等参数。两步检查不能用于评价训练质量。
 
-## 迁移与验证
+### 3.3 配置文件与模式约束
 
-本副本来自当前 LichtFeld-Studio 工作区，包含迁移时未提交的源码修改。原项目文件未移动或删除，新目录原有 Git 仓库保留。详见[迁移范围与验证记录](docs/swaptexture_delivery/migration.md)。
+前处理参数由 `resources/swaptexture_configs/swaptexture_params.json` 管理，训练参数由 `resources/swaptexture_configs/eval` 下对应策略的六个 JSON 管理。构建时加密为包内 `bin/Swaptexture_params.bin` 和六个 `bin/GS_params_*.bin`，运行时读取这些 BIN。
 
-原项目许可证见 [LICENSE](LICENSE)，依赖信息见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
+- `reconstruction.input_mode` 默认 `auto`，跟随 CLI 输入源；固定为其他模式时，不能与显式 CLI 输入源冲突。
+- `reconstruction.preprocess_only=true` 强制仅前处理，与 `--enable_gs_train` 互斥。scan 模式仅做前处理时必须设置此项。
+- GS 训练需要可用的三角 mesh；mesh、点云和相机应处于相同坐标系与单位。
+- 启用 `registered.incremental_mask` 时，需要自行提供 `registered.foreground_model` 指定的 ONNX 模型。
+- `mesh-export` 通过 `reconstruction.input_mode` 选择，只导出数据；需关闭 `common.debug_mesh_overlay`，且不能传入训练开关或 `--gs-training-mode`。
+
+修改 JSON 后需重新加密才会影响已生成的分发包。已有包可只更新配置，无需重新编译 C++：
+
+```bat
+rem 更新前处理配置
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\update_swaptexture_delivery_configs.ps1 -ConfigPath resources\swaptexture_configs\swaptexture_params.json
+
+rem 更新 igs+ 的全部七个配置
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\update_swaptexture_delivery_configs.ps1 -All -Strategy igs+
+```
+
+更新时策略应与目标包一致；可用 `-PackageDirectory` 指定包根目录、`-WhatIf` 预览。修改配置会改变包内文件哈希，正式交付时需重新执行完整构建分发流程。
+
+## 4. 代码文件结构
+
+| 路径 | 职责 |
+|---|---|
+| `CMakeLists.txt` | 工程构建入口、依赖查找、目标链接与安装配置 |
+| `cmake/` | 构建脚本和模板：配置加密、运行依赖收集、第三方文件校验、包布局及审计；属于源码 |
+| `src/app/` | 程序入口与流程编排；`main.cpp` 分发运行模式，`reconstruction_command.cpp` 解析重建参数，`training_runner.cpp` 调用训练 |
+| `src/preprocessing/` | scan / registered 流程、图像处理、COLMAP 数据准备、注册、mesh 导出和运行工作区管理 |
+| `src/core/` | 参数解析、张量与 CUDA 基础设施、场景数据、日志和路径处理 |
+| `src/io/` | scanner bin、图像、相机、mesh、点云及模型格式读写 |
+| `src/geometry/` | 几何变换、包围盒和 mesh 孔洞填补 |
+| `src/training/` | 训练循环、策略、优化器、损失函数及光栅化 CUDA 后端 |
+| `src/rendering/` | 渲染相关源码；当前命令行目标使用其中的 `mesh2splat.cpp` |
+| `src/visualizer/`、`src/sequencer/`、`src/mcp/`、`src/python/` | 可视化、序列、MCP 和 Python 相关源码；当前 CMake 未启用这些完整模块 |
+| `external/` | 随工程提供的第三方源码和头文件 |
+| `third_party/runtime/` | COLMAP、超分辅助程序及对应文件清单、哈希和来源记录 |
+| `resources/swaptexture_configs/` | 融合配置、18 个训练配置和产品 manifest |
+| `src/rendering/resources/shaders/` | mesh2splat 着色器资源 |
+| `scripts/` | 构建分发、配置加密与更新、包审计和启动检查脚本 |
+| `vcpkg.json`、`vcpkg-configuration.json`、`.github/overlays/` | vcpkg 依赖声明和 overlay 配置 |
+| `docs/swaptexture_delivery/` | 参数、构建分发和源码映射等详细文档 |
+
+生成内容与源码分开放置：`build-swaptexture-work/` 保存编译缓存和中间产物，`SwapTexture/` 保存最终运行包，`build-swaptexture-artifacts/` 保存可选 ZIP，`.planning/` 保存本地任务记录和验证报告。
+
+许可证见 [LICENSE](LICENSE)，第三方依赖信息见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
