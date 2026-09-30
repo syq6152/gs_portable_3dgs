@@ -1695,7 +1695,7 @@ namespace lfs::core {
             tensors[0].capacity() > 0 &&
             tensors[0].capacity() >= total_size_along_dim) {
 
-            LOG_DEBUG("  ✓ IN-PLACE OPTIMIZATION: Reusing buffer");
+            LOG_DEBUG("  [OK] IN-PLACE OPTIMIZATION: Reusing buffer");
             // IN-PLACE PATH: Reuse first tensor's pre-allocated buffer
             // IMPORTANT: Use logical_size_ (actual current size) not shape_[0] which may be stale after reserve()
             const size_t first_size = (tensors[0].capacity() > 0 && tensors[0].logical_size() > 0)
@@ -1797,13 +1797,13 @@ namespace lfs::core {
                 }
             }
 
-            LOG_DEBUG("  ← Returning IN-PLACE result: id={}, data_ptr={}, capacity={}",
+            LOG_DEBUG("  <- Returning IN-PLACE result: id={}, data_ptr={}, capacity={}",
                       result.id_, result.data_ptr(), result.capacity());
             return result;
         }
 
         // ============= FALLBACK: Standard allocation path =============
-        LOG_DEBUG("  → SLOW PATH: Allocating new buffer");
+        LOG_DEBUG("  -> SLOW PATH: Allocating new buffer");
         auto result = Tensor::empty(TensorShape(result_dims), first_device, first_dtype);
         LOG_DEBUG("  Created new tensor: id={}, data_ptr={}, capacity={}",
                   result.id_, result.data_ptr(), result.capacity());
@@ -1836,7 +1836,7 @@ namespace lfs::core {
                 }
             }
 
-            LOG_DEBUG("  ← Returning SLOW PATH result: id={}, data_ptr={}, capacity={}",
+            LOG_DEBUG("  <- Returning SLOW PATH result: id={}, data_ptr={}, capacity={}",
                       result.id_, result.data_ptr(), result.capacity());
             return result;
         }

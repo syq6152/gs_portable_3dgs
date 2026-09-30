@@ -66,7 +66,7 @@ namespace lfs::app {
 
     std::string ReconstructionOutput::concise_progress(std::size_t step, float overall_fraction) const {
         const auto percent = std::clamp(std::lround(overall_fraction * 100.0F), 0L, 100L);
-        return std::format("步骤 {}/{}，进度：{}%", step, total_steps_, percent);
+        return std::format("Step {}/{}, progress: {}%", step, total_steps_, percent);
     }
 
     void ReconstructionOutput::stage_progress(std::string_view name, float local_fraction, float overall_fraction) {
@@ -84,14 +84,14 @@ namespace lfs::app {
             stage_started_[stage] = now;
             stage_bucket_[stage] = -1;
             if (detailed_)
-                emit(std::format("步骤 {}/{}：Starting {} (overall {:.1f}%)",
+                emit(std::format("Step {}/{}: Starting {} (overall {:.1f}%)",
                                  step, total_steps_, stage, overall_fraction * 100.0F));
         }
         const int percent = std::clamp(static_cast<int>(std::floor(local_fraction * 100.0F)), 0, 100);
         if (percent >= 100) {
             const auto elapsed = std::chrono::duration<double>(now - stage_started_.at(stage)).count();
             if (detailed_)
-                emit(std::format("步骤 {}/{}：Completed {} ({:.1f}s, overall {:.1f}%)",
+                emit(std::format("Step {}/{}: Completed {} ({:.1f}s, overall {:.1f}%)",
                                  step, total_steps_, stage, elapsed, overall_fraction * 100.0F));
             else
                 emit(concise_progress(step, overall_fraction));
@@ -102,7 +102,7 @@ namespace lfs::app {
             const int bucket = percent / 10;
             if (bucket > stage_bucket_.at(stage) && bucket > 0) {
                 stage_bucket_[stage] = bucket;
-                emit(std::format("步骤 {}/{}：{} {}% (overall {:.1f}%)",
+                emit(std::format("Step {}/{}: {} {}% (overall {:.1f}%)",
                                  step, total_steps_, stage, bucket * 10, overall_fraction * 100.0F));
             }
         }
@@ -116,7 +116,7 @@ namespace lfs::app {
         last_training_box_iteration_ = 0;
         training_started_at_ = std::chrono::steady_clock::now();
         if (detailed_)
-            emit(std::format("步骤 {}/{}：GS training started ({} iterations, overall {:.1f}%)",
+            emit(std::format("Step {}/{}: GS training started ({} iterations, overall {:.1f}%)",
                              training_step_, total_steps_, total_iterations, overall_fraction * 100.0F), true);
         else
             emit(concise_progress(training_step_, overall_fraction), true);
@@ -156,7 +156,7 @@ namespace lfs::app {
             return;
         training_bucket_ = bucket;
         if (detailed_)
-            emit(std::format("步骤 {}/{}：GS training {}/{} ({}%, overall {:.1f}%, loss={:.6g}, gaussians={})",
+            emit(std::format("Step {}/{}: GS training {}/{} ({}%, overall {:.1f}%, loss={:.6g}, gaussians={})",
                              training_step_, total_steps_, iteration, total_iterations, percent,
                              overall_fraction * 100.0F, loss, gaussians), true);
         else
@@ -167,7 +167,7 @@ namespace lfs::app {
         if (training_step_ == 0)
             return;
         if (detailed_)
-            emit(std::format("步骤 {}/{}：GS training {} (overall {:.1f}%)",
+            emit(std::format("Step {}/{}: GS training {} (overall {:.1f}%)",
                              training_step_, total_steps_, outcome, overall_fraction * 100.0F), true);
         else
             emit(concise_progress(training_step_, overall_fraction), true);
@@ -176,7 +176,7 @@ namespace lfs::app {
     void ReconstructionOutput::completed(float overall_fraction) {
         current_step_ = completion_step_;
         if (detailed_)
-            emit(std::format("步骤 {}/{}：Processing completed (overall {:.1f}%)",
+            emit(std::format("Step {}/{}: Processing completed (overall {:.1f}%)",
                              completion_step_, total_steps_, overall_fraction * 100.0F), true);
         else
             emit(concise_progress(completion_step_, overall_fraction), true);

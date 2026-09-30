@@ -1275,7 +1275,7 @@ namespace lfs::training {
                  saved, lfs::core::path_to_utf8(mask_dir));
 
         if (!hole_fill_points_world.empty()) {
-            LOG_INFO("project_mesh mask mode: hole fill touched {}/{} cameras — "
+            LOG_INFO("project_mesh mask mode: hole fill touched {}/{} cameras - "
                      "{} points accepted of {} in frustum, {} enclosed holes seen, {} filled "
                      "({} px), boundary-open fallback added {} px",
                      cameras_with_fill, saved,
@@ -1527,7 +1527,7 @@ namespace lfs::training {
         int device_count = 0;
         cudaError_t error = cudaGetDeviceCount(&device_count);
         if (error != cudaSuccess || device_count == 0) {
-            throw std::runtime_error("CUDA is not available – aborting.");
+            throw std::runtime_error("CUDA is not available - aborting.");
         }
 
         cudaStreamCreateWithFlags(&callback_stream_, cudaStreamNonBlocking);
@@ -1540,7 +1540,7 @@ namespace lfs::training {
         int device_count = 0;
         cudaError_t error = cudaGetDeviceCount(&device_count);
         if (error != cudaSuccess || device_count == 0) {
-            throw std::runtime_error("CUDA is not available – aborting.");
+            throw std::runtime_error("CUDA is not available - aborting.");
         }
 
         cudaStreamCreateWithFlags(&callback_stream_, cudaStreamNonBlocking);
@@ -4213,7 +4213,7 @@ namespace lfs::training {
                 LOG_INFO("Pyramid training enabled: {} levels, {} iters per level",
                          pyramid_config.levels, params_.optimization.pyramid_step_interval);
                 for (size_t i = 0; i < pyramid_config.downsample_factors.size(); ++i) {
-                    LOG_INFO("  Pyramid level {} (coarse→fine): {}x downsample",
+                    LOG_INFO("  Pyramid level {} (coarse->fine): {}x downsample",
                              i, pyramid_config.downsample_factors[i]);
                 }
                 LOG_INFO("  Pyramid level {} (full resolution): 1x", pyramid_config.levels - 1);

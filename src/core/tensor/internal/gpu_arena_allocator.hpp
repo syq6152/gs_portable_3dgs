@@ -233,10 +233,10 @@ namespace lfs::core {
             allocator_ = std::make_unique<OffsetAllocator::Allocator>(allocator_size, max_allocs);
 
             LOG_INFO("GPU Arena Allocator initialized:");
-            LOG_INFO("  • Arena size: {:.2f} GB", arena_size_ / (1024.0 * 1024.0 * 1024.0));
-            LOG_INFO("  • Max allocations: {}", max_allocs);
-            LOG_INFO("  • Base address: {}", gpu_base_);
-            LOG_INFO("  • OffsetAllocator overhead: ~6.25% (TLSF algorithm)");
+            LOG_INFO("  - Arena size: {:.2f} GB", arena_size_ / (1024.0 * 1024.0 * 1024.0));
+            LOG_INFO("  - Max allocations: {}", max_allocs);
+            LOG_INFO("  - Base address: {}", gpu_base_);
+            LOG_INFO("  - OffsetAllocator overhead: ~6.25% (TLSF algorithm)");
         }
 
         void cleanup() {

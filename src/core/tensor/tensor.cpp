@@ -319,7 +319,7 @@ namespace lfs::core {
         if (state_ && other.state_ &&
             state_->capacity != other.state_->capacity &&
             state_->capacity > 1000000) {
-            LOG_WARN("Assignment operator: LOSING CAPACITY! this.capacity={} → other.capacity={}, this.data_={}, other.data_={}",
+            LOG_WARN("Assignment operator: LOSING CAPACITY! this.capacity={} -> other.capacity={}, this.data_={}, other.data_={}",
                      state_->capacity, other.state_->capacity, data_, other.data_);
         }
         state_ = std::make_shared<TensorState>(*other.state_);
@@ -736,11 +736,11 @@ namespace lfs::core {
         if (!is_contiguous_) {
             if (device_ == Device::CUDA && device == Device::CPU) {
                 // GPU→CPU: Materialize on GPU FIRST (GPU kernel is faster)
-                LOG_DEBUG("GPU→CPU: materializing on GPU before download");
+                LOG_DEBUG("GPU->CPU: materializing on GPU before download");
                 return contiguous().to(device);
             } else if (device_ == Device::CPU && device == Device::CUDA) {
                 // CPU→GPU: Use fused strided upload kernel!
-                LOG_DEBUG("CPU→GPU non-contiguous: using fused strided upload kernel (rank={})", shape_.rank());
+                LOG_DEBUG("CPU->GPU non-contiguous: using fused strided upload kernel (rank={})", shape_.rank());
 
                 auto t = empty(shape_, Device::CUDA, dtype_);
                 const cudaStream_t transfer_stream = stream ? stream : t.stream();
@@ -2477,7 +2477,7 @@ namespace lfs::core {
         const size_t element_size = dtype_size(dtype_);
         const size_t new_bytes = new_total_elements * element_size;
 
-        LOG_DEBUG("  Allocating: {} rows × {} elements/row × {} bytes/elem = {} MB",
+        LOG_DEBUG("  Allocating: {} rows x {} elements/row x {} bytes/elem = {} MB",
                   new_capacity, row_size, element_size, new_bytes / (1024.0 * 1024.0));
 
         // First, explicitly release the old buffer to avoid double allocation
@@ -2490,16 +2490,16 @@ namespace lfs::core {
         try {
             if (device_ == Device::CUDA) {
                 CHECK_CUDA(cudaMalloc(&new_data, new_bytes));
-                LOG_DEBUG("  ✓ CUDA allocation succeeded: {} MB at {}", new_bytes / (1024.0 * 1024.0), new_data);
+                LOG_DEBUG("  [OK] CUDA allocation succeeded: {} MB at {}", new_bytes / (1024.0 * 1024.0), new_data);
             } else {
                 new_data = std::malloc(new_bytes);
                 if (!new_data) {
                     throw TensorError("Failed to allocate CPU memory for reserve()", this);
                 }
-                LOG_DEBUG("  ✓ CPU allocation succeeded: {} MB at {}", new_bytes / (1024.0 * 1024.0), new_data);
+                LOG_DEBUG("  [OK] CPU allocation succeeded: {} MB at {}", new_bytes / (1024.0 * 1024.0), new_data);
             }
         } catch (const std::exception& e) {
-            LOG_ERROR("  ✗ Allocation failed: {}", e.what());
+            LOG_ERROR("  [ERROR] Allocation failed: {}", e.what());
             throw;
         }
 
@@ -2531,7 +2531,7 @@ namespace lfs::core {
         // This ensures we don't have both buffers alive at the same time
         old_owner.reset(); // Decrement ref count, potentially freeing old buffer immediately
 
-        LOG_DEBUG("✓ Tensor #{}: reserve({}) SUCCEEDED - capacity now {}, size {} ({:.1f}% utilization)",
+        LOG_DEBUG("[OK] Tensor #{}: reserve({}) SUCCEEDED - capacity now {}, size {} ({:.1f}% utilization)",
                   id_, new_capacity, state_->capacity, current_rows, 100.0 * current_rows / state_->capacity);
     }
 

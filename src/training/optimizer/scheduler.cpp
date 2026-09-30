@@ -44,7 +44,7 @@ namespace lfs::training {
             // Default behavior (MCMC): Update ONLY global LR (means uses this)
             double current_lr = optimizer_.get_lr();
             double new_lr = current_lr * decay_factor;
-            LOG_DEBUG("ExponentialLR::step() - Global LR: {:.6e} → {:.6e} (gamma={:.6f})",
+            LOG_DEBUG("ExponentialLR::step() - Global LR: {:.6e} -> {:.6e} (gamma={:.6f})",
                       current_lr, new_lr, decay_factor);
             optimizer_.set_lr(static_cast<float>(new_lr));
 
@@ -64,7 +64,7 @@ namespace lfs::training {
                     double new_param_lr = current_param_lr * decay_factor;
                     optimizer_.set_param_lr(param_type, new_param_lr);
 
-                    LOG_DEBUG("ExponentialLR::step() - {} LR: {:.15e} → {:.15e}",
+                    LOG_DEBUG("ExponentialLR::step() - {} LR: {:.15e} -> {:.15e}",
                               param_names.at(param_type), current_param_lr, new_param_lr);
                 }
             }
@@ -111,7 +111,7 @@ namespace lfs::training {
 
         if (params_to_update_.empty()) {
             // Default behavior: Update ONLY global LR
-            LOG_DEBUG("WarmupExponentialLR::step() [{}] - step {}/{}: Global LR: {:.6e} → {:.6e} (scale={:.6f})",
+            LOG_DEBUG("WarmupExponentialLR::step() [{}] - step {}/{}: Global LR: {:.6e} -> {:.6e} (scale={:.6f})",
                       phase, current_step_, warmup_steps_, old_global_lr, new_global_lr, scale_factor);
             optimizer_.set_lr(static_cast<float>(new_global_lr));
 
@@ -134,7 +134,7 @@ namespace lfs::training {
                     // Use double precision to avoid LR drift!
                     double current_param_lr = optimizer_.get_param_lr(param_type);
                     double new_param_lr = current_param_lr * lr_ratio;
-                    LOG_DEBUG("  {} LR: {:.15e} → {:.15e} (ratio: {:.6f})",
+                    LOG_DEBUG("  {} LR: {:.15e} -> {:.15e} (ratio: {:.6f})",
                               param_names.at(param_type), current_param_lr, new_param_lr, lr_ratio);
                     optimizer_.set_param_lr(param_type, new_param_lr);
                 } else {
@@ -144,7 +144,7 @@ namespace lfs::training {
 
             // Also update global LR
             optimizer_.set_lr(static_cast<float>(new_global_lr));
-            LOG_DEBUG("  Global LR: {:.6e} → {:.6e}", old_global_lr, new_global_lr);
+            LOG_DEBUG("  Global LR: {:.6e} -> {:.6e}", old_global_lr, new_global_lr);
         }
     }
 

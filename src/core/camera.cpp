@@ -381,12 +381,12 @@ namespace lfs::core {
             if (_image_width > _image_height) {
                 _image_width = max_width;
                 _image_height = (old_height * max_width) / old_width; // Fixed: Use old_width
-                LOG_DEBUG("load_image_size(): Resized {}x{} → {}x{} (limited by max_width={})",
+                LOG_DEBUG("load_image_size(): Resized {}x{} -> {}x{} (limited by max_width={})",
                           old_width, old_height, _image_width, _image_height, max_width);
             } else {
                 _image_height = max_width;
                 _image_width = (old_width * max_width) / old_height; // Fixed: Use old_height
-                LOG_DEBUG("load_image_size(): Resized {}x{} → {}x{} (limited by max_width={})",
+                LOG_DEBUG("load_image_size(): Resized {}x{} -> {}x{} (limited by max_width={})",
                           old_width, old_height, _image_width, _image_height, max_width);
             }
         }

@@ -1359,7 +1359,7 @@ namespace lfs::io {
             std::vector<float>().swap(src_fuv);
             std::vector<float>().swap(src_nrm);
             std::unordered_map<VertKey, int32_t, VertKeyHash>().swap(vert_map);
-            LOG_INFO("load_ply_mesh: split {} → {} vertices ({} faces)", V, NV, F);
+            LOG_INFO("load_ply_mesh: split {} -> {} vertices ({} faces)", V, NV, F);
 
             // ---- Build MeshData ----
             auto out_verts = Tensor::empty({NV, 3}, Device::CPU, DataType::Float32);

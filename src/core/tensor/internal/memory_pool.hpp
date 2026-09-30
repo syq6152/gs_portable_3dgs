@@ -256,7 +256,7 @@ namespace lfs::core {
 
             slab_enabled_ = GPUSlabAllocator::instance().is_enabled();
             if (slab_enabled_) {
-                LOG_DEBUG("Slab allocator enabled (≤256KB)");
+                LOG_DEBUG("Slab allocator enabled (<=256KB)");
             }
             LOG_DEBUG("Size-bucketed pool enabled (256KB-16GB, reduces fragmentation)");
         }

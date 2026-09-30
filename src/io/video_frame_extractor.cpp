@@ -303,9 +303,9 @@ namespace lfs::io {
                 const bool full_gpu_pipeline = using_hw_decode && gpu_encoding_enabled && gpu_rgb_buffer && !needs_scale;
 
                 if (full_gpu_pipeline) {
-                    LOG_INFO("Full GPU pipeline: NVDEC decode → GPU color convert → GPU JPEG encode");
+                    LOG_INFO("Full GPU pipeline: NVDEC decode -> GPU color convert -> GPU JPEG encode");
                 } else if (using_hw_decode) {
-                    LOG_INFO("Hybrid pipeline: NVDEC decode → CPU transfer → {}",
+                    LOG_INFO("Hybrid pipeline: NVDEC decode -> CPU transfer -> {}",
                              gpu_encoding_enabled ? "GPU encode" : "CPU encode");
                 } else if (gpu_encoding_enabled) {
                     LOG_INFO("Using GPU batch JPEG encoding (batch size: {})", JPEG_BATCH_SIZE);

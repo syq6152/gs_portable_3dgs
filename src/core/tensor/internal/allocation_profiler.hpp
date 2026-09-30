@@ -370,7 +370,7 @@ namespace lfs::core {
                         std::string shape = shape_dtype.substr(0, dtype_pos);
                         std::string dtype = shape_dtype.substr(dtype_pos + 1);
 
-                        printf("  └─ %zu x %s %-10s | %12.2f MB total | %.2f MB each\n",
+                        printf("  +- %zu x %s %-10s | %12.2f MB total | %.2f MB each\n",
                                tensors.size(),
                                shape.c_str(),
                                dtype.c_str(),

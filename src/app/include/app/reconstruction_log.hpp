@@ -85,7 +85,7 @@ namespace lfs::app {
         }
         ~ReconstructionLog() {
             const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started_at_;
-            std::cout << std::format("总耗时：{:.3f}s\n", elapsed.count());
+            std::cout << std::format("Total elapsed time: {:.3f}s\n", elapsed.count());
             std::cout.flush();
             std::cerr.flush();
             std::cout.rdbuf(original_stdout_);
