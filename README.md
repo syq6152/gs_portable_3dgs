@@ -118,6 +118,30 @@ SwapTexture\SwapTexture.exe --bin_path "D:\input\texture_data.bin" --enable_gs_t
 
 部分训练参数可以放在 `--` 后覆盖，例如在训练命令末尾添加 `-- --iter 2` 做两步调用检查。这需要同时传入 `--enable_gs_train`，且禁止覆盖流程管理的 dataset、output、config、strategy 和 mesh-init 等参数。两步检查不能用于评价训练质量。
 
+**数据路径：**
+
+测试数据存放在以下共享目录，可将所需样本整体复制到本地后运行：
+
+```text
+\\10.10.20.13\智能视觉事业群\00.项目文档\11.三维扫描产品线\TB2201\安卓版本\06算法\windows\AI\纹理替换\GS_portable_test_data
+```
+
+以样本 `Pika-红外纹理中物体-0.3mm-壁画花` 为例，部分文件结构如下：
+
+```text
+Pika-红外纹理中物体-0.3mm-壁画花/
+├── tex_dump/
+│   ├── texture_data.bin          # --bin_path 指向此文件
+│   ├── mesh.ply                  # 扫描网格
+│   ├── 0.png                     # 扫描图片
+│   ├── ...
+│   └── 243.png
+├── 增量图/                        # --images_inc_path 指向此目录
+│   ├── IMG_0838.JPG               # 补拍照片
+│   └── ...
+
+```
+
 ### 3.3 配置文件与模式约束
 
 前处理参数由 `resources/swaptexture_configs/swaptexture_params.json` 管理，训练参数由 `resources/swaptexture_configs/eval` 下对应策略的六个 JSON 管理。构建时加密为包内 `bin/Swaptexture_params.bin` 和六个 `bin/GS_params_*.bin`，运行时读取这些 BIN。
